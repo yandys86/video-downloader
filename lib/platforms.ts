@@ -41,7 +41,10 @@ export function isSupportedUrl(url: string): boolean {
 
 export function safeFilename(name: string, ext = "mp4"): string {
   const cleaned = (name || "video")
-    .replace(/[\\/:*?"<>|]+/g, " ")
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/[\\/:*?"<>|#]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);

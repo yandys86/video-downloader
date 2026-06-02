@@ -34,11 +34,8 @@ function buildFormatSelector(quality: string | null): string {
 }
 
 function buildContentDisposition(filename: string): string {
-  const asciiFallback = filename
-    .replace(/[^\x20-\x7E]/g, "_")
-    .replace(/["\\]/g, "_");
-  const utf8 = encodeURIComponent(filename);
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8}`;
+  const safe = filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
+  return `attachment; filename="${safe}"`;
 }
 
 export async function GET(req: NextRequest) {
