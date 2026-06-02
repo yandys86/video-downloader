@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { detectPlatform } from "@/lib/platforms";
+import { detectPlatform, safeFilename } from "@/lib/platforms";
 
 type VideoFormat = {
   format_id: string;
@@ -79,16 +79,18 @@ export default function Page() {
   function startDownload() {
     if (!isValid) return;
     setDownloading(true);
+    const ext = quality === "audio" ? "m4a" : "mp4";
+    const filename = safeFilename(info?.title || "video", ext);
     const params = new URLSearchParams({
       url,
       quality,
-      title: info?.title || "video"
+      title: filename.replace(/\.(mp4|m4a)$/, "")
     });
     const href = `/api/download?${params.toString()}`;
     const a = document.createElement("a");
     a.href = href;
     a.rel = "noopener";
-    a.download = "";
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
