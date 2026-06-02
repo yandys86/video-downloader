@@ -45,8 +45,9 @@ export function safeFilename(name: string, ext = "mp4"): string {
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^\x20-\x7E]/g, "")
     .replace(/[\\/:*?"<>|#]+/g, " ")
-    .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 120);
+    .replace(/\s+/g, "_")
+    .slice(0, 120)
+    .replace(/^_+|_+$/g, "");
   return `${cleaned || "video"}.${ext}`;
 }
