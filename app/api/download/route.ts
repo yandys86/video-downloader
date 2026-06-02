@@ -12,6 +12,9 @@ const YT_DLP_BIN: string =
   process.env.YT_DLP_PATH ||
   "yt-dlp";
 
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
 function buildFormatSelector(quality: string | null): string {
   switch (quality) {
     case "audio":
@@ -28,6 +31,14 @@ function buildFormatSelector(quality: string | null): string {
     default:
       return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
   }
+}
+
+function buildContentDisposition(filename: string): string {
+  const asciiFallback = filename
+    .replace(/[^\x20-\x7E]/g, "_")
+    .replace(/["\\]/g, "_");
+  const utf8 = encodeURIComponent(filename);
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${utf8}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -55,8 +66,9 @@ export async function GET(req: NextRequest) {
     "--no-warnings",
     "--no-playlist",
     "--no-progress",
-    "--no-call-home",
-    "--no-check-certificates"
+    "--no-check-certificates",
+    "--user-agent", USER_AGENT,
+    "--add-header", "Accept-Language:en-US,en;q=0.9"
   ];
 
   if (!isAudio) {
@@ -73,8 +85,39 @@ export async function GET(req: NextRequest) {
     if (stderrBuf.length > 4000) stderrBuf = stderrBuf.slice(-4000);
   });
 
+  const firstChunk = await new Promise<Buffer | null>((resolve) => {
+    let done = false;
+    const finish = (v: Buffer | null) => {
+      if (!done) {
+        done = true;
+        resolve(v);
+      }
+    };
+    child.stdout.once("data", (chunk: Buffer) => finish(chunk));
+    child.on("close", () => finish(null));
+    child.on("error", () => finish(null));
+    setTimeout(() => finish(null), 45000);
+  });
+
+  if (!firstChunk) {
+    try { child.kill("SIGTERM"); } catch {}
+    const detail = stderrBuf.slice(-1500).trim();
+    return new Response(
+      JSON.stringify({
+        error: "yt-dlp no pudo descargar este video",
+        hint: "La plataforma puede requerir autenticacion, el video puede estar privado/geo-bloqueado, o el formato pedido no esta disponible.",
+        detail
+      }),
+      {
+        status: 502,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+      }
+    );
+  }
+
   const stream = new ReadableStream({
     start(controller) {
+      controller.enqueue(firstChunk);
       child.stdout.on("data", (chunk) => controller.enqueue(chunk));
       child.stdout.on("end", () => controller.close());
       child.stdout.on("error", (err) => controller.error(err));
@@ -94,7 +137,7 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       "Content-Type": isAudio ? "audio/mp4" : "video/mp4",
-      "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}"`,
+      "Content-Disposition": buildContentDisposition(filename),
       "Cache-Control": "no-store",
       "X-Platform": platform.platform
     }

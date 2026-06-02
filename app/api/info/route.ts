@@ -17,11 +17,12 @@ export async function POST(req: NextRequest) {
     const info: any = await youtubedl(url, {
       dumpSingleJson: true,
       noWarnings: true,
-      noCallHome: true,
       noCheckCertificates: true,
       preferFreeFormats: true,
       youtubeSkipDashManifest: true,
-      addHeader: ["referer:youtube.com", "user-agent:googlebot"]
+      addHeader: [
+        "user-agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+      ]
     });
 
     const formats = Array.isArray(info.formats)
