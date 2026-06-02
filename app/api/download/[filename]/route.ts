@@ -73,7 +73,11 @@ export async function GET(
   ];
 
   if (!isAudio) {
-    args.push("--merge-output-format", "mp4");
+    args.push(
+      "--merge-output-format", "mp4",
+      "--postprocessor-args",
+      "ffmpeg:-movflags +frag_keyframe+empty_moov+default_base_moof"
+    );
   } else {
     args.push("-x", "--audio-format", "m4a");
   }
