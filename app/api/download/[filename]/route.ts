@@ -21,20 +21,24 @@ const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
 function buildFormatSelector(quality: string | null): string {
+  const h = (max: string) =>
+    `bestvideo[height<=${max}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/` +
+    `best[height<=${max}][ext=mp4][vcodec^=avc1]/` +
+    `best[height<=${max}][ext=mp4]/best[height<=${max}]`;
   switch (quality) {
     case "audio":
       return "bestaudio[ext=m4a]/bestaudio";
-    case "360":
-      return "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]";
-    case "480":
-      return "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]";
-    case "720":
-      return "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]";
-    case "1080":
-      return "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]";
+    case "360": return h("360");
+    case "480": return h("480");
+    case "720": return h("720");
+    case "1080": return h("1080");
     case "best":
     default:
-      return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
+      return (
+        "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/" +
+        "best[ext=mp4][vcodec^=avc1]/" +
+        "best[ext=mp4]/best"
+      );
   }
 }
 
