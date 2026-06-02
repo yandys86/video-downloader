@@ -1,9 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
+import { spawn } from "node:child_process";
 import youtubedl from "youtube-dl-exec";
 import { detectPlatform, isSupportedUrl } from "@/lib/platforms";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const YT_DLP_BIN: string =
+  (youtubedl as any).binaryPath ||
+  process.env.YT_DLP_PATH ||
+  "yt-dlp";
+
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+function dumpJson(url: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(
+      YT_DLP_BIN,
+      [
+        url,
+        "--dump-single-json",
+        "--no-warnings",
+        "--no-playlist",
+        "--no-check-certificates",
+        "--youtube-skip-dash-manifest",
+        "--prefer-free-formats",
+        "--user-agent", USER_AGENT,
+        "--add-header", "Accept-Language:en-US,en;q=0.9"
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] }
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => { stdout += d.toString(); });
+    child.stderr.on("data", (d) => {
+      stderr += d.toString();
+      if (stderr.length > 4000) stderr = stderr.slice(-4000);
+    });
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on("error", () => resolve({ code: 1, stdout, stderr }));
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,17 +51,27 @@ export async function POST(req: NextRequest) {
     }
 
     const platform = detectPlatform(url);
+    const result = await dumpJson(url);
 
-    const info: any = await youtubedl(url, {
-      dumpSingleJson: true,
-      noWarnings: true,
-      noCheckCertificates: true,
-      preferFreeFormats: true,
-      youtubeSkipDashManifest: true,
-      addHeader: [
-        "user-agent:Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-      ]
-    });
+    if (result.code !== 0 || !result.stdout.trim()) {
+      return NextResponse.json(
+        {
+          error: "No se pudo obtener informacion del video",
+          detail: result.stderr.slice(-1500).trim()
+        },
+        { status: 502 }
+      );
+    }
+
+    let info: any;
+    try {
+      info = JSON.parse(result.stdout);
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: "No se pudo obtener informacion del video", detail: String(e?.message || e) },
+        { status: 502 }
+      );
+    }
 
     const formats = Array.isArray(info.formats)
       ? info.formats
