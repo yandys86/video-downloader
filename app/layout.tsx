@@ -69,73 +69,23 @@ export const viewport: Viewport = {
 
 const JSON_LD = {
   "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "WebApplication",
-      "@id": `${SITE_URL}#webapp`,
-      name: SITE_NAME,
-      url: SITE_URL,
-      description: DESCRIPTION,
-      applicationCategory: "MultimediaApplication",
-      operatingSystem: "Any",
-      browserRequirements: "Requires a modern browser",
-      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      featureList: [
-        "Descarga videos de YouTube y Shorts",
-        "Descarga TikTok sin marca de agua",
-        "Descarga Reels y posts publicos de Instagram",
-        "Descarga videos de Twitter/X",
-        "Descarga videos de Facebook y FB Watch",
-        "Solo audio en formato m4a",
-        "Hasta 1080p cuando esta disponible"
-      ]
-    },
-    {
-      "@type": "FAQPage",
-      "@id": `${SITE_URL}#faq`,
-      mainEntity: [
-        {
-          "@type": "Question",
-          name: "Como descargo un video de YouTube?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Copia el enlace del video o Short de YouTube, pegalo en el campo, elegi la calidad y toca Descargar al dispositivo. El archivo se guarda en la carpeta de descargas de tu navegador."
-          }
-        },
-        {
-          "@type": "Question",
-          name: "Puedo descargar TikTok sin marca de agua?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Si, cuando la version sin marca de agua esta disponible para el video, la descarga es directa sin watermark."
-          }
-        },
-        {
-          "@type": "Question",
-          name: "Funciona en iPhone y Android?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Si. La descarga viaja desde el servidor al navegador como un archivo MP4 estandar, asi que tu telefono lo guarda en su carpeta de descargas sin instalar nada."
-          }
-        },
-        {
-          "@type": "Question",
-          name: "Es gratis?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "Si, el servicio es gratuito. No tenes que registrarte ni instalar extensiones."
-          }
-        },
-        {
-          "@type": "Question",
-          name: "Puedo descargar videos privados o de cuentas con login?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "No. Solo funciona con videos publicos. Instagram privado, paginas con login obligatorio o contenido protegido no se pueden bajar."
-          }
-        }
-      ]
-    }
+  "@type": "WebApplication",
+  "@id": `${SITE_URL}#webapp`,
+  name: SITE_NAME,
+  url: SITE_URL,
+  description: DESCRIPTION,
+  applicationCategory: "MultimediaApplication",
+  operatingSystem: "Any",
+  browserRequirements: "Requires a modern browser",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  featureList: [
+    "Descarga videos de YouTube y Shorts",
+    "Descarga TikTok sin marca de agua",
+    "Descarga Reels y posts publicos de Instagram",
+    "Descarga videos de Twitter/X",
+    "Descarga videos de Facebook y FB Watch",
+    "Solo audio en formato m4a",
+    "Hasta 1080p cuando esta disponible"
   ]
 };
 
