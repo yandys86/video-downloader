@@ -24,7 +24,8 @@ function buildFormatSelector(quality: string | null): string {
   const h = (max: string) =>
     `bestvideo[height<=${max}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/` +
     `best[height<=${max}][ext=mp4][vcodec^=avc1]/` +
-    `best[height<=${max}][ext=mp4]/best[height<=${max}]`;
+    `best[height<=${max}][ext=mp4]/best[height<=${max}]/` +
+    `bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best`;
   switch (quality) {
     case "audio":
       return "bestaudio[ext=m4a]/bestaudio";
