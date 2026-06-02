@@ -1,5 +1,10 @@
 import { NextRequest } from "next/server";
 import { spawn } from "node:child_process";
+import { createReadStream } from "node:fs";
+import { stat, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import youtubedl from "youtube-dl-exec";
 import { detectPlatform, isSupportedUrl, safeFilename } from "@/lib/platforms";
 
@@ -38,6 +43,27 @@ function buildContentDisposition(filename: string): string {
   return `attachment; filename="${safe}"`;
 }
 
+function runProcess(
+  cmd: string,
+  args: string[],
+  captureStderr: boolean
+): Promise<{ code: number; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, {
+      stdio: ["ignore", "ignore", captureStderr ? "pipe" : "ignore"]
+    });
+    let stderrBuf = "";
+    if (captureStderr && child.stderr) {
+      child.stderr.on("data", (d) => {
+        stderrBuf += d.toString();
+        if (stderrBuf.length > 4000) stderrBuf = stderrBuf.slice(-4000);
+      });
+    }
+    child.on("close", (code) => resolve({ code: code ?? 1, stderr: stderrBuf }));
+    child.on("error", () => resolve({ code: 1, stderr: stderrBuf }));
+  });
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { filename: string } }
@@ -60,10 +86,19 @@ export async function GET(
   const filename = safeFilename(baseName || "video", ext);
   const platform = detectPlatform(url);
 
+  const id = randomBytes(8).toString("hex");
+  const downloadPath = join(tmpdir(), `vd-${id}-dl.${ext}`);
+  let faststartPath: string | null = null;
+
+  const cleanup = async () => {
+    await unlink(downloadPath).catch(() => {});
+    if (faststartPath) await unlink(faststartPath).catch(() => {});
+  };
+
   const args = [
     url,
     "-f", buildFormatSelector(quality),
-    "-o", "-",
+    "-o", downloadPath,
     "--no-warnings",
     "--no-playlist",
     "--no-progress",
@@ -73,45 +108,20 @@ export async function GET(
   ];
 
   if (!isAudio) {
-    args.push(
-      "--merge-output-format", "mp4",
-      "--postprocessor-args",
-      "ffmpeg:-movflags +frag_keyframe+empty_moov+default_base_moof"
-    );
+    args.push("--merge-output-format", "mp4");
   } else {
     args.push("-x", "--audio-format", "m4a");
   }
 
-  const child = spawn(YT_DLP_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
+  const ytdlp = await runProcess(YT_DLP_BIN, args, true);
 
-  let stderrBuf = "";
-  child.stderr.on("data", (d) => {
-    stderrBuf += d.toString();
-    if (stderrBuf.length > 4000) stderrBuf = stderrBuf.slice(-4000);
-  });
-
-  const firstChunk = await new Promise<Buffer | null>((resolve) => {
-    let done = false;
-    const finish = (v: Buffer | null) => {
-      if (!done) {
-        done = true;
-        resolve(v);
-      }
-    };
-    child.stdout.once("data", (chunk: Buffer) => finish(chunk));
-    child.on("close", () => finish(null));
-    child.on("error", () => finish(null));
-    setTimeout(() => finish(null), 45000);
-  });
-
-  if (!firstChunk) {
-    try { child.kill("SIGTERM"); } catch {}
-    const detail = stderrBuf.slice(-1500).trim();
+  if (ytdlp.code !== 0) {
+    await cleanup();
     return new Response(
       JSON.stringify({
         error: "yt-dlp no pudo descargar este video",
         hint: "La plataforma puede requerir autenticacion, el video puede estar privado/geo-bloqueado, o el formato pedido no esta disponible.",
-        detail
+        detail: ytdlp.stderr.slice(-1500).trim()
       }),
       {
         status: 502,
@@ -120,21 +130,47 @@ export async function GET(
     );
   }
 
+  let servePath = downloadPath;
+  if (!isAudio) {
+    faststartPath = join(tmpdir(), `vd-${id}-fs.mp4`);
+    const remux = await runProcess("ffmpeg", [
+      "-y", "-i", downloadPath,
+      "-c", "copy",
+      "-movflags", "+faststart",
+      faststartPath
+    ], false);
+    if (remux.code === 0) {
+      servePath = faststartPath;
+    } else {
+      await unlink(faststartPath).catch(() => {});
+      faststartPath = null;
+    }
+  }
+
+  let fileSize: number;
+  try {
+    fileSize = (await stat(servePath)).size;
+  } catch {
+    await cleanup();
+    return new Response(JSON.stringify({ error: "internal" }), { status: 500 });
+  }
+
+  const readStream = createReadStream(servePath);
   const stream = new ReadableStream({
     start(controller) {
-      controller.enqueue(firstChunk);
-      child.stdout.on("data", (chunk) => controller.enqueue(chunk));
-      child.stdout.on("end", () => controller.close());
-      child.stdout.on("error", (err) => controller.error(err));
-      child.on("error", (err) => controller.error(err));
-      child.on("close", (code) => {
-        if (code !== 0) {
-          try { controller.error(new Error(stderrBuf || `yt-dlp exit ${code}`)); } catch {}
-        }
+      readStream.on("data", (chunk) => controller.enqueue(chunk));
+      readStream.on("end", () => {
+        controller.close();
+        cleanup();
+      });
+      readStream.on("error", (err) => {
+        controller.error(err);
+        cleanup();
       });
     },
     cancel() {
-      try { child.kill("SIGTERM"); } catch {}
+      readStream.destroy();
+      cleanup();
     }
   });
 
@@ -142,6 +178,7 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": isAudio ? "audio/mp4" : "video/mp4",
+      "Content-Length": String(fileSize),
       "Content-Disposition": buildContentDisposition(filename),
       "Cache-Control": "no-store",
       "X-Platform": platform.platform
