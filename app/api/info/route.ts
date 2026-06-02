@@ -14,23 +14,22 @@ const YT_DLP_BIN: string =
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
-function dumpJson(url: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(
-      YT_DLP_BIN,
-      [
-        url,
-        "--dump-single-json",
-        "--no-warnings",
-        "--no-playlist",
-        "--no-check-certificates",
-        "--youtube-skip-dash-manifest",
-        "--prefer-free-formats",
-        "--user-agent", USER_AGENT,
-        "--add-header", "Accept-Language:en-US,en;q=0.9"
-      ],
-      { stdio: ["ignore", "pipe", "pipe"] }
+function dumpJson(url: string, useCustomUA: boolean): Promise<{ code: number; stdout: string; stderr: string }> {
+  const args = [
+    url,
+    "--dump-single-json",
+    "--no-warnings",
+    "--no-playlist",
+    "--no-check-certificates"
+  ];
+  if (useCustomUA) {
+    args.push(
+      "--user-agent", USER_AGENT,
+      "--add-header", "Accept-Language:en-US,en;q=0.9"
     );
+  }
+  return new Promise((resolve) => {
+    const child = spawn(YT_DLP_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => { stdout += d.toString(); });
@@ -51,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     const platform = detectPlatform(url);
-    const result = await dumpJson(url);
+    const result = await dumpJson(url, platform.platform !== "facebook");
 
     if (result.code !== 0 || !result.stdout.trim()) {
       return NextResponse.json(

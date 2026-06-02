@@ -112,10 +112,14 @@ export async function GET(
     "--no-warnings",
     "--no-playlist",
     "--no-progress",
-    "--no-check-certificates",
-    "--user-agent", USER_AGENT,
-    "--add-header", "Accept-Language:en-US,en;q=0.9"
+    "--no-check-certificates"
   ];
+  if (platform.platform !== "facebook") {
+    args.push(
+      "--user-agent", USER_AGENT,
+      "--add-header", "Accept-Language:en-US,en;q=0.9"
+    );
+  }
 
   if (!isAudio) {
     args.push("--merge-output-format", "mp4");
