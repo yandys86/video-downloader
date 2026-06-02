@@ -81,12 +81,8 @@ export default function Page() {
     setDownloading(true);
     const ext = quality === "audio" ? "m4a" : "mp4";
     const filename = safeFilename(info?.title || "video", ext);
-    const params = new URLSearchParams({
-      url,
-      quality,
-      title: filename.replace(/\.(mp4|m4a)$/, "")
-    });
-    const href = `/api/download?${params.toString()}`;
+    const params = new URLSearchParams({ url, quality });
+    const href = `/api/download/${encodeURIComponent(filename)}?${params.toString()}`;
     const a = document.createElement("a");
     a.href = href;
     a.rel = "noopener";

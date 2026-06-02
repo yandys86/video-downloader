@@ -38,11 +38,13 @@ function buildContentDisposition(filename: string): string {
   return `attachment; filename="${safe}"`;
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { filename: string } }
+) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get("url");
   const quality = searchParams.get("quality");
-  const titleHint = searchParams.get("title") || "video";
 
   if (!url || !isSupportedUrl(url)) {
     return new Response(JSON.stringify({ error: "URL no soportada" }), {
@@ -53,7 +55,9 @@ export async function GET(req: NextRequest) {
 
   const isAudio = quality === "audio";
   const ext = isAudio ? "m4a" : "mp4";
-  const filename = safeFilename(titleHint, ext);
+  const rawFromPath = decodeURIComponent(params.filename || "");
+  const baseName = rawFromPath.replace(/\.(mp4|m4a|mkv|webm)$/i, "");
+  const filename = safeFilename(baseName || "video", ext);
   const platform = detectPlatform(url);
 
   const args = [
