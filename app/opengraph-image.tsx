@@ -17,8 +17,9 @@ export default function OgImage() {
           alignItems: "center",
           justifyContent: "center",
           padding: "80px",
-          background:
-            "radial-gradient(at top left, #1a0b2e 0%, transparent 50%), radial-gradient(at bottom right, #0b2a2e 0%, transparent 50%), #0b0b14",
+          backgroundColor: "#0b0b14",
+          backgroundImage:
+            "linear-gradient(135deg, #1a0b2e 0%, #0b0b14 50%, #0b2a2e 100%)",
           color: "white",
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
         }}
