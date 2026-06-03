@@ -3,9 +3,7 @@ import AffiliateBanner from "@/components/AffiliateBanner";
 import Downloader from "@/components/Downloader";
 import Footer from "@/components/Footer";
 import PlatformNav from "@/components/PlatformNav";
-
-const AD_SLOT_TOP = process.env.NEXT_PUBLIC_ADSENSE_SLOT_TOP;
-const AD_SLOT_BOTTOM = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BOTTOM;
+import { AD_SLOT_BOTTOM, AD_SLOT_TOP } from "@/lib/ads";
 
 const FAQ = [
   {
