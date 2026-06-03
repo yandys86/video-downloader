@@ -1,0 +1,2 @@
+# Reemplaza pub-0000000000000000 con tu Publisher ID de AdSense (ca-pub-XXXX → pub-XXXX) cuando te aprueben.
+google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0

@@ -1,5 +1,11 @@
+import AdSlot from "@/components/AdSlot";
+import AffiliateBanner from "@/components/AffiliateBanner";
 import Downloader from "@/components/Downloader";
+import Footer from "@/components/Footer";
 import PlatformNav from "@/components/PlatformNav";
+
+const AD_SLOT_TOP = process.env.NEXT_PUBLIC_ADSENSE_SLOT_TOP;
+const AD_SLOT_BOTTOM = process.env.NEXT_PUBLIC_ADSENSE_SLOT_BOTTOM;
 
 export type FaqItem = { q: string; a: string };
 
@@ -54,7 +60,11 @@ export default function PlatformLanding({
 
       <PlatformNav active={navActive} />
 
+      <AffiliateBanner />
+
       <Downloader placeholder={placeholder} />
+
+      <AdSlot slot={AD_SLOT_TOP} />
 
       <section className="mt-12">
         <h2 className="text-2xl font-bold tracking-tight mb-4">Caracteristicas</h2>
@@ -86,9 +96,9 @@ export default function PlatformLanding({
         </div>
       </section>
 
-      <footer className="mt-10 text-center text-xs text-white/40">
-        Solo para uso personal. Respeta los derechos de autor de cada plataforma.
-      </footer>
+      <AdSlot slot={AD_SLOT_BOTTOM} />
+
+      <Footer />
     </main>
   );
 }
