@@ -54,6 +54,9 @@ export const metadata: Metadata = {
       "max-snippet": -1
     }
   },
+  verification: {
+    google: "UOuTNZoQmtXmOmcQaSIHuUVH7hZsXUsJtndpEP2FBHw"
+  },
   formatDetection: {
     telephone: false,
     email: false,
