@@ -68,6 +68,58 @@ export default function Page() {
 
       <AdSlot slot={AD_SLOT_TOP} />
 
+      <section className="mt-12 space-y-3">
+        <h2 className="text-2xl font-bold tracking-tight">¿Qué es TuVideoDown y cómo funciona?</h2>
+        <p className="text-white/75 leading-relaxed">
+          TuVideoDown es una herramienta en línea gratuita para descargar y guardar videos públicos
+          de las redes sociales más populares directamente en tu dispositivo. Procesamos el enlace
+          que pegas y te entregamos un archivo MP4 estándar, sin necesidad de instalar programas ni
+          extensiones del navegador.
+        </p>
+        <p className="text-white/75 leading-relaxed">
+          Está pensada para ser rápida y compatible con el móvil: tanto en Android como en iPhone
+          puedes guardar tus videos para verlos sin conexión, ahorrar datos o conservar un recuerdo,
+          siempre respetando los derechos de autor de los creadores y limitando el uso a fines
+          personales.
+        </p>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-2xl font-bold tracking-tight mb-4">Cómo descargar en 3 pasos</h2>
+        <ol className="space-y-3 text-white/80">
+          <li className="flex gap-3">
+            <span className="shrink-0 grid size-7 place-items-center rounded-full bg-violet-500/20 border border-violet-400 text-sm font-bold">1</span>
+            <span><strong>Copia el enlace</strong> del video desde el botón Compartir de la app o del navegador.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="shrink-0 grid size-7 place-items-center rounded-full bg-violet-500/20 border border-violet-400 text-sm font-bold">2</span>
+            <span><strong>Pégalo</strong> en el campo de arriba y elige la calidad (o solo audio).</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="shrink-0 grid size-7 place-items-center rounded-full bg-violet-500/20 border border-violet-400 text-sm font-bold">3</span>
+            <span><strong>Toca Descargar</strong> y el archivo se guardará en la carpeta de descargas de tu dispositivo.</span>
+          </li>
+        </ol>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-2xl font-bold tracking-tight mb-4">Plataformas soportadas</h2>
+        <p className="text-white/75 leading-relaxed mb-3">
+          Puedes descargar videos públicos de:
+        </p>
+        <ul className="grid grid-cols-2 gap-2 text-white/80">
+          <li className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">YouTube y YouTube Shorts</li>
+          <li className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">TikTok (sin marca de agua cuando es posible)</li>
+          <li className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">Instagram (Reels y posts públicos)</li>
+          <li className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">Twitter / X</li>
+          <li className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">Facebook y FB Watch</li>
+        </ul>
+        <p className="mt-4 text-white/70">
+          ¿Quieres más trucos? Visita nuestras{" "}
+          <a href="/blog" className="text-violet-300 hover:text-violet-200 underline">guías y consejos</a>.
+        </p>
+      </section>
+
       <section className="mt-12">
         <h2 className="text-2xl font-bold tracking-tight mb-4">Preguntas frecuentes</h2>
         <div className="space-y-3">
