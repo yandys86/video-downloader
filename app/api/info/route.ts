@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import youtubedl from "youtube-dl-exec";
 import { detectPlatform, isSupportedUrl } from "@/lib/platforms";
 
@@ -14,7 +15,14 @@ const YT_DLP_BIN: string =
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 
-function dumpJson(url: string, useCustomUA: boolean): Promise<{ code: number; stdout: string; stderr: string }> {
+const IG_COOKIES_PATH = process.env.IG_COOKIES_PATH || "";
+const IG_COOKIES_OK = !!IG_COOKIES_PATH && existsSync(IG_COOKIES_PATH);
+
+function dumpJson(
+  url: string,
+  useCustomUA: boolean,
+  cookiesPath?: string
+): Promise<{ code: number; stdout: string; stderr: string }> {
   const args = [
     url,
     "--dump-single-json",
@@ -27,6 +35,9 @@ function dumpJson(url: string, useCustomUA: boolean): Promise<{ code: number; st
       "--user-agent", USER_AGENT,
       "--add-header", "Accept-Language:en-US,en;q=0.9"
     );
+  }
+  if (cookiesPath) {
+    args.push("--cookies", cookiesPath);
   }
   return new Promise((resolve) => {
     const child = spawn(YT_DLP_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -50,7 +61,20 @@ export async function POST(req: NextRequest) {
     }
 
     const platform = detectPlatform(url);
-    const result = await dumpJson(url, platform.platform !== "facebook");
+
+    if (platform.platform === "instagram" && !IG_COOKIES_OK) {
+      return NextResponse.json(
+        {
+          error: "Instagram no disponible",
+          detail:
+            "Instagram cambio sus restricciones y ya no permite descargas sin sesion iniciada. Esta plataforma esta temporalmente deshabilitada. Probe con YouTube, TikTok, Facebook o X."
+        },
+        { status: 503 }
+      );
+    }
+
+    const cookiesPath = platform.platform === "instagram" ? IG_COOKIES_PATH : undefined;
+    const result = await dumpJson(url, platform.platform !== "facebook", cookiesPath);
 
     if (result.code !== 0 || !result.stdout.trim()) {
       return NextResponse.json(

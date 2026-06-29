@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { spawn } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,9 @@ const YT_DLP_BIN: string =
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+const IG_COOKIES_PATH = process.env.IG_COOKIES_PATH || "";
+const IG_COOKIES_OK = !!IG_COOKIES_PATH && existsSync(IG_COOKIES_PATH);
 
 function buildFormatSelector(quality: string | null): string {
   const h = (max: string) =>
@@ -96,6 +99,19 @@ export async function GET(
   const filename = safeFilename(baseName || "video", ext);
   const platform = detectPlatform(url);
 
+  if (platform.platform === "instagram" && !IG_COOKIES_OK) {
+    return new Response(
+      JSON.stringify({
+        error: "Instagram no disponible",
+        hint: "Instagram cambio sus restricciones y ya no permite descargas sin sesion iniciada. Probe con YouTube, TikTok, Facebook o X."
+      }),
+      {
+        status: 503,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+      }
+    );
+  }
+
   const id = randomBytes(8).toString("hex");
   const downloadPath = join(tmpdir(), `vd-${id}-dl.${ext}`);
   let faststartPath: string | null = null;
@@ -119,6 +135,9 @@ export async function GET(
       "--user-agent", USER_AGENT,
       "--add-header", "Accept-Language:en-US,en;q=0.9"
     );
+  }
+  if (platform.platform === "instagram") {
+    args.push("--cookies", IG_COOKIES_PATH);
   }
 
   if (!isAudio) {
