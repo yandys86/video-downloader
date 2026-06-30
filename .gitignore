@@ -12,3 +12,4 @@ next-env.d.ts
 cookies.txt
 cookies/
 ig_cookies*.txt
+.env.deploy
