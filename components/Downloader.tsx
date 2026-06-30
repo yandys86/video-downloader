@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { detectPlatform, safeFilename } from "@/lib/platforms";
 
 type VideoFormat = {
@@ -52,10 +52,15 @@ export default function Downloader({ placeholder = "https://..." }: { placeholde
   const platform = useMemo(() => detectPlatform(url), [url]);
   const isValid = url.trim().length > 0 && platform.platform !== "unknown";
 
-  async function fetchInfo() {
+  // Acepta llamadas directas (auto-fill) con la URL como argumento;
+  // si no se pasa, usa la del state (camino del botón "Analizar").
+  async function fetchInfo(overrideUrl?: string) {
+    const target = (overrideUrl ?? url).trim();
     setError(null);
     setInfo(null);
-    if (!isValid) {
+    if (!target) return;
+    const detected = detectPlatform(target);
+    if (detected.platform === "unknown") {
       setError("Pega un enlace de YouTube, TikTok, Instagram, X o Facebook.");
       return;
     }
@@ -64,7 +69,7 @@ export default function Downloader({ placeholder = "https://..." }: { placeholde
       const res = await fetch("/api/info", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url: target })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Error obteniendo info");
@@ -75,6 +80,41 @@ export default function Downloader({ placeholder = "https://..." }: { placeholde
       setLoading(false);
     }
   }
+
+  // Auto-fill desde ?url=... (deep-link de Revolicuba u otra integración).
+  // Si la plataforma es reconocida, dispara fetchInfo automáticamente para
+  // ahorrarle un click al usuario que llega con intención clara.
+  const autoFilledRef = useRef(false);
+  useEffect(() => {
+    if (autoFilledRef.current) return;
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const incoming = params.get("url");
+    if (!incoming) return;
+
+    const cleaned = incoming.trim();
+    if (!cleaned) return;
+    autoFilledRef.current = true;
+
+    setUrl(cleaned);
+
+    // Limpio el query string para que la URL del navegador quede limpia
+    // (y que el usuario pueda compartirla sin arrastrar parámetros).
+    const next = new URLSearchParams(window.location.search);
+    next.delete("url");
+    next.delete("from");
+    const path = window.location.pathname;
+    const query = next.toString();
+    window.history.replaceState({}, "", query ? `${path}?${query}` : path);
+
+    // Si reconocemos la plataforma, lanzo el análisis directo.
+    const detected = detectPlatform(cleaned);
+    if (detected.platform !== "unknown") {
+      void fetchInfo(cleaned);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function startDownload() {
     if (!isValid) return;
@@ -106,7 +146,7 @@ export default function Downloader({ placeholder = "https://..." }: { placeholde
             className="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-3 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-400/30 placeholder:text-white/40"
           />
           <button
-            onClick={fetchInfo}
+            onClick={() => fetchInfo()}
             disabled={loading || !isValid}
             className="rounded-xl bg-violet-500 hover:bg-violet-400 disabled:opacity-50 disabled:cursor-not-allowed transition px-5 py-3 font-medium"
           >
