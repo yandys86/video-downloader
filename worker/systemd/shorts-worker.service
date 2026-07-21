@@ -9,6 +9,8 @@ User=shorts
 Group=shorts
 WorkingDirectory=/opt/shorts-worker
 EnvironmentFile=/opt/shorts-worker/.env
+# El venv debe estar en PATH para que el pipeline encuentre `edge-tts` (entry-point Python instalado ahí).
+Environment=PATH=/opt/shorts-worker/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/opt/shorts-worker/.venv/bin/uvicorn worker.main:app --host ${HOST} --port ${PORT} --workers 1
 Restart=on-failure
 RestartSec=5

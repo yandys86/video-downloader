@@ -9,3 +9,4 @@ anthropic==0.42.0
 faster-whisper==1.0.3
 edge-tts==6.1.19
 yt-dlp>=2024.11.4
+requests>=2.32   # faster-whisper lo importa pero huggingface_hub 1.x ya no lo trae como dep transitiva

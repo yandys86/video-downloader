@@ -41,7 +41,7 @@ apt-get upgrade -y -qq
 
 log "Instalando dependencias del sistema…"
 apt-get install -y -qq \
-  git curl ca-certificates \
+  git curl ca-certificates sudo \
   python3.11 python3.11-venv python3-pip \
   ffmpeg \
   build-essential \
