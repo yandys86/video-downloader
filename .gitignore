@@ -13,3 +13,10 @@ cookies.txt
 cookies/
 ig_cookies*.txt
 .env.deploy
+
+# Python (worker)
+**/__pycache__/
+*.pyc
+worker/.venv/
+worker/.env
+

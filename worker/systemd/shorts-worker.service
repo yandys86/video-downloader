@@ -1,0 +1,25 @@
+[Unit]
+Description=Shorts Worker (FastAPI) — genera YouTube Shorts desde vídeos largos
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shorts
+Group=shorts
+WorkingDirectory=/opt/shorts-worker
+EnvironmentFile=/opt/shorts-worker/.env
+ExecStart=/opt/shorts-worker/.venv/bin/uvicorn worker.main:app --host ${HOST} --port ${PORT} --workers 1
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# Bloqueamos escritura fuera de estos paths.
+ProtectSystem=strict
+ReadWritePaths=/opt/shorts-worker /var/lib/shorts-worker
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

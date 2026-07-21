@@ -3,7 +3,7 @@ import { POSTS } from "@/lib/blog";
 
 const SITE_URL = "https://tuvideodown.com";
 
-const PRIMARY_ROUTES = ["", "/youtube", "/tiktok", "/instagram", "/facebook", "/twitter"];
+const PRIMARY_ROUTES = ["", "/shorts", "/youtube", "/tiktok", "/instagram", "/facebook", "/twitter"];
 const CONTENT_ROUTES = ["/blog", "/sobre", "/contacto"];
 const LEGAL_ROUTES = ["/privacy", "/terms"];
 

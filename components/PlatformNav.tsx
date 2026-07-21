@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const LINKS = [
   { href: "/",          label: "Inicio" },
+  { href: "/shorts",    label: "Generar Shorts" },
   { href: "/youtube",   label: "YouTube" },
   { href: "/tiktok",    label: "TikTok" },
   { href: "/instagram", label: "Instagram" },
