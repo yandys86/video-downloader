@@ -86,8 +86,12 @@ def _get_whisper() -> WhisperModel:
 
 
 def transcribe(audio_path: Path, language: str | None = None) -> dict:
-    """Devuelve {segments: [{start, end, text, words: [...]}], language}."""
-    lang = language or settings.whisper_language
+    """Devuelve {segments: [{start, end, text, words: [...]}], language}.
+
+    Si `language` es None/vacío autodetecta. Forzar el idioma equivocado
+    combinado con vad_filter puede descartar todos los segmentos.
+    """
+    lang = language or (settings.whisper_language or None)
     segments_iter, info = _get_whisper().transcribe(
         str(audio_path),
         language=lang,

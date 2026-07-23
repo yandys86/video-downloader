@@ -18,7 +18,10 @@ class Settings(BaseSettings):
 
     whisper_model: str = "small"
     whisper_compute_type: str = "int8"
-    whisper_language: str = "es"
+    # Vacío = autodetectar idioma. Forzar solo si sabes que todos los vídeos
+    # vienen en un idioma concreto (ej. "es", "en"). Forzar el idioma
+    # equivocado + vad_filter descarta segmentos y devuelve transcript vacío.
+    whisper_language: str = ""
 
     default_tts_voice: str = "es-ES-AlvaroNeural"
     default_tts_rate: str = "+8%"

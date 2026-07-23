@@ -66,12 +66,28 @@ def run_analyze(job_id: str) -> None:
         storage.update_job(db, job_id, stage="transcribe", progress=0.25)
         transcript = pipeline.transcribe(audio)
 
+        # Rechazo temprano si el audio tiene demasiado poco diálogo para
+        # generar Shorts con sentido (música, silencio, efectos).
+        segments = transcript["segments"]
+        total_chars = sum(len(s.get("text", "")) for s in segments)
+        if not segments or total_chars < 200:
+            raise RuntimeError(
+                "Este vídeo tiene muy poco diálogo hablado para generar Shorts "
+                f"(solo {total_chars} caracteres transcritos en {int(duration)}s). "
+                "Prueba con un vídeo con más contenido hablado (podcast, tutorial, "
+                "entrevista, charla)."
+            )
+
         storage.update_job(db, job_id, stage="highlights", progress=0.75)
         highlights = llm.find_highlights(
-            transcript["segments"], n=settings.max_highlights_per_job
+            segments, n=settings.max_highlights_per_job
         )
         if not highlights:
-            raise RuntimeError("No se detectaron highlights (transcript vacío o error LLM)")
+            raise RuntimeError(
+                "La IA no encontró momentos con potencial viral en este vídeo. "
+                "Prueba con contenido más punchy: entrevistas, opiniones fuertes, "
+                "datos concretos, historias personales."
+            )
 
         result = {
             "source_path": str(source),
