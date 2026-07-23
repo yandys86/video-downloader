@@ -7,6 +7,6 @@ python-multipart==0.0.12
 
 anthropic==0.42.0
 faster-whisper==1.0.3
-edge-tts==6.1.19
+edge-tts>=7.2.8   # Microsoft rota Sec-MS-GEC token; 6.x da 403. Mantener actualizado.
 yt-dlp>=2024.11.4
 requests>=2.32   # faster-whisper lo importa pero huggingface_hub 1.x ya no lo trae como dep transitiva

@@ -145,7 +145,23 @@ def synthesize_tts(text: str, voice: str, rate: str, out_mp3: Path) -> None:
         "--text", text,
         "--write-media", str(out_mp3),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        # Extraer el motivo real del stderr en lugar de propagar
+        # "returned non-zero exit status 1" (opaco).
+        err = (res.stderr or "").strip().splitlines()
+        last = err[-1] if err else ""
+        # 403 típico de Microsoft rotando tokens en edge-tts obsoleto.
+        if "403" in last or "WSServerHandshakeError" in last:
+            raise RuntimeError(
+                "El servicio de voz (edge-tts) está temporalmente inaccesible. "
+                "Es un problema conocido: Microsoft rota tokens y el paquete "
+                "necesita actualización. Reintenta en unos minutos o contacta al admin."
+            )
+        raise RuntimeError(f"edge-tts falló: {last or 'sin detalles'}")
+    # Verifica que el archivo se generó (a veces exit 0 pero sin archivo).
+    if not out_mp3.exists() or out_mp3.stat().st_size < 100:
+        raise RuntimeError("edge-tts no generó audio válido (archivo vacío)")
 
 
 # ---------------------------------------------------------------------------
