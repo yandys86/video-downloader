@@ -7,10 +7,20 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import youtubedl from "youtube-dl-exec";
 import { detectPlatform, isSupportedUrl, safeFilename } from "@/lib/platforms";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+// Descargas son mucho más caras que /api/info: cada una arranca yt-dlp+ffmpeg.
+// 10 por IP y hora es suficiente para uso legítimo, corta abusos.
+const DOWNLOAD_RATE_LIMIT = 10;
+const DOWNLOAD_RATE_WINDOW_MS = 60 * 60 * 1000;
+// Semáforo global: no más de 4 descargas simultáneas en todo el server para
+// no saturar CPU con múltiples ffmpeg concurrentes.
+const MAX_CONCURRENT_DOWNLOADS = 4;
+let inFlightDownloads = 0;
 
 const YT_DLP_BIN: string =
   (youtubedl as any).binaryPath ||
@@ -81,6 +91,43 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { filename: string } }
 ) {
+  // Rate limit por IP.
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`dl:${ip}`, DOWNLOAD_RATE_LIMIT, DOWNLOAD_RATE_WINDOW_MS);
+  if (!rl.ok) {
+    return new Response(
+      JSON.stringify({
+        error: `Demasiadas descargas. Reintenta en ${Math.ceil(rl.retryAfter / 60)} min.`,
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(rl.retryAfter),
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
+  // Semáforo global de concurrencia: si hay ya 4 descargas activas rechaza
+  // rápido en lugar de encolar (evita colgar al usuario y saturar CPU).
+  if (inFlightDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+    return new Response(
+      JSON.stringify({
+        error: "Servidor ocupado, prueba en unos segundos.",
+      }),
+      {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "10",
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
   const { searchParams } = new URL(req.url);
   const url = searchParams.get("url");
   const quality = searchParams.get("quality");
@@ -116,7 +163,17 @@ export async function GET(
   const downloadPath = join(tmpdir(), `vd-${id}-dl.${ext}`);
   let faststartPath: string | null = null;
 
+  // Reserva slot en el semáforo. Se libera en cleanup() suceda lo que suceda.
+  inFlightDownloads++;
+  let released = false;
+  const releaseSlot = () => {
+    if (released) return;
+    released = true;
+    inFlightDownloads = Math.max(0, inFlightDownloads - 1);
+  };
+
   const cleanup = async () => {
+    releaseSlot();
     await unlink(downloadPath).catch(() => {});
     if (faststartPath) await unlink(faststartPath).catch(() => {});
   };

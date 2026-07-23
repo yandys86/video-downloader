@@ -1,7 +1,6 @@
 /**
- * Rate limit muy simple en memoria por IP. Sirve para frenar bots que
- * intenten disparar analyze/generate en bucle. El límite duro (3 Shorts/día)
- * lo aplica también el worker en la BBDD, esto es solo cortafuegos rápido.
+ * Rate limit + helpers de IP compartidos por todas las rutas API.
+ * Frena bots y usuarios abusivos antes de tocar yt-dlp/ffmpeg/worker.
  *
  * En producción con múltiples instancias sustituir por Redis/Upstash.
  */
@@ -26,6 +25,18 @@ export function checkRateLimit(
   }
   b.count += 1;
   return { ok: true, retryAfter: 0 };
+}
+
+/**
+ * Extrae el IP real del cliente. Prioriza cabecera de Cloudflare, luego
+ * X-Forwarded-For, y por último cae al hostname del socket.
+ */
+export function getClientIp(req: Request): string {
+  const cf = req.headers.get("cf-connecting-ip");
+  if (cf) return cf;
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return "";
 }
 
 // Cleanup ocasional (no crítico si no corre).

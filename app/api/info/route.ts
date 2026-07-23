@@ -3,9 +3,16 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import youtubedl from "youtube-dl-exec";
 import { detectPlatform, isSupportedUrl } from "@/lib/platforms";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { infoCache } from "@/lib/infoCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Límite: 30 llamadas a /api/info por IP y hora. Suficiente para navegación
+// normal (pegar varias URLs), corta bots agresivos.
+const INFO_RATE_LIMIT = 30;
+const INFO_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 const YT_DLP_BIN: string =
   (youtubedl as any).binaryPath ||
@@ -55,9 +62,25 @@ function dumpJson(
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit por IP: 30/hora. Antes de hacer nada caro.
+    const ip = getClientIp(req);
+    const rl = checkRateLimit(`info:${ip}`, INFO_RATE_LIMIT, INFO_RATE_WINDOW_MS);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: `Demasiadas consultas. Reintenta en ${rl.retryAfter}s.` },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+      );
+    }
+
     const { url } = await req.json();
     if (!url || typeof url !== "string" || !isSupportedUrl(url)) {
       return NextResponse.json({ error: "URL no soportada" }, { status: 400 });
+    }
+
+    // Cache hit: devuelve la info sin invocar yt-dlp de nuevo.
+    const cached = infoCache.get(url);
+    if (cached) {
+      return NextResponse.json(cached, { headers: { "X-Cache": "HIT" } });
     }
 
     const platform = detectPlatform(url);
@@ -111,7 +134,7 @@ export async function POST(req: NextRequest) {
           }))
       : [];
 
-    return NextResponse.json({
+    const responseData = {
       platform: platform.platform,
       platformLabel: platform.label,
       title: info.title ?? "video",
@@ -119,7 +142,9 @@ export async function POST(req: NextRequest) {
       duration: info.duration ?? null,
       uploader: info.uploader ?? info.channel ?? null,
       formats
-    });
+    };
+    infoCache.set(url, responseData);
+    return NextResponse.json(responseData, { headers: { "X-Cache": "MISS" } });
   } catch (err: any) {
     return NextResponse.json(
       { error: "No se pudo obtener informacion del video", detail: String(err?.message || err) },

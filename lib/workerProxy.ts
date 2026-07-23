@@ -1,8 +1,10 @@
 /**
- * Cliente HTTP para hablar con el shorts-worker (FastAPI en CT 222).
+ * Cliente HTTP para hablar con el shorts-worker (FastAPI en CT 231).
  * Reenvía el X-Worker-Secret desde env y adjunta el IP del cliente para
  * que el worker aplique rate-limiting por IP real.
  */
+
+export { getClientIp } from "./rateLimit";
 
 const WORKER_URL = (process.env.SHORTS_WORKER_URL || "http://localhost:8000").replace(/\/$/, "");
 const WORKER_SECRET = process.env.SHORTS_WORKER_SECRET || "";
@@ -47,12 +49,4 @@ export async function callWorkerJson<T = unknown>(
     throw new WorkerError(res.status, msg);
   }
   return text ? (JSON.parse(text) as T) : ({} as T);
-}
-
-export function getClientIp(req: Request): string {
-  const cf = req.headers.get("cf-connecting-ip");
-  if (cf) return cf;
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  return "";
 }
