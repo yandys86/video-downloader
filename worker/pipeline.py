@@ -89,28 +89,48 @@ def transcribe(audio_path: Path, language: str | None = None) -> dict:
     """Devuelve {segments: [{start, end, text, words: [...]}], language}.
 
     Si `language` es None/vacío autodetecta. Forzar el idioma equivocado
-    combinado con vad_filter puede descartar todos los segmentos.
+    combinado con vad_filter puede descartar todos los segmentos, y
+    autodetect con vad_filter en audio sin voz clara puede crashear
+    faster-whisper. Hacemos fallback a vad_filter=False en esos casos.
     """
     lang = language or (settings.whisper_language or None)
-    segments_iter, info = _get_whisper().transcribe(
-        str(audio_path),
-        language=lang,
-        word_timestamps=True,
-        vad_filter=True,
-    )
-    segments = []
+
+    def _run(vad: bool):
+        return _get_whisper().transcribe(
+            str(audio_path),
+            language=lang,
+            word_timestamps=True,
+            vad_filter=vad,
+        )
+
+    try:
+        segments_iter, info = _run(True)
+        segments = _consume_segments(segments_iter)
+    except ValueError as e:
+        # faster-whisper 1.0.x: `max() arg is an empty sequence` cuando VAD
+        # descarta el audio entero y no queda nada para detectar idioma.
+        if "empty sequence" not in str(e):
+            raise
+        segments_iter, info = _run(False)
+        segments = _consume_segments(segments_iter)
+
+    return {"segments": segments, "language": info.language}
+
+
+def _consume_segments(segments_iter) -> list[dict]:
+    out = []
     for seg in segments_iter:
         words = []
         if seg.words:
             for w in seg.words:
                 words.append({"word": w.word, "start": float(w.start), "end": float(w.end)})
-        segments.append({
+        out.append({
             "start": float(seg.start),
             "end": float(seg.end),
             "text": seg.text.strip(),
             "words": words,
         })
-    return {"segments": segments, "language": info.language}
+    return out
 
 
 # ---------------------------------------------------------------------------
