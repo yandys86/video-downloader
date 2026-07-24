@@ -56,10 +56,9 @@ def build_ass(
         groups.append(buf)
 
     for group in groups:
-        g_start = group[0]["start"]
         g_end = group[-1]["end"]
-        # Para cada palabra dentro del grupo emitimos un Dialogue que resalta esa
-        # palabra en amarillo y deja las demás en blanco (efecto karaoke).
+        # Para cada palabra dentro del grupo emitimos un Dialogue que resalta
+        # esa palabra en amarillo y deja las demás en blanco (efecto karaoke).
         for i, active in enumerate(group):
             frag = []
             for j, w in enumerate(group):
@@ -73,9 +72,10 @@ def build_ass(
                     frag.append(token)
             text = " ".join(frag)
             start = _fmt_time(active["start"])
-            end = _fmt_time(active["end"] if j == i else min(active["end"], g_end))
+            end = _fmt_time(active["end"] if i == len(group) - 1 else min(active["end"], g_end))
+            # \n obligatorio: ffmpeg ignora las líneas concatenadas sin salto.
             lines.append(
-                f"Dialogue: 0,{start},{end},Karaoke,,0,0,0,,{{\\an5\\pos(540,1300)}}{text}"
+                f"Dialogue: 0,{start},{end},Karaoke,,0,0,0,,{{\\an5\\pos(540,1300)}}{text}\n"
             )
 
     Path(output_path).write_text("".join(lines), encoding="utf-8")
