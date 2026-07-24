@@ -58,6 +58,9 @@ class GenerateRequest(BaseModel):
     parent_id: str
     highlight_indices: list[int] = Field(..., min_length=1, max_length=10)
     style: str = Field(..., pattern=r"^(original|blur|loop|gradient)$")
+    # 'ai' = edge-tts + guion reescrito. 'original' = audio real del vídeo
+    # (más rápido, útil para clips virales tal-cual del vídeo original).
+    voice_mode: str = Field("ai", pattern=r"^(ai|original)$")
     voice: str | None = None
     rate: str | None = None
     loop_video_path: str | None = None

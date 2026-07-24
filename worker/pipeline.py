@@ -304,6 +304,21 @@ def extract_audio(source: Path, out_mp3: Path) -> None:
     ], check=True, capture_output=True)
 
 
+def extract_audio_slice(source: Path, start: float, duration: float, out_mp3: Path) -> None:
+    """Extrae un slice de audio del source (para modo voice_mode='original').
+
+    Corta [start, start+duration] del audio de la fuente y lo guarda como mp3.
+    Mucho más rápido que TTS + re-transcribe porque no hay red ni Whisper.
+    """
+    out_mp3.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-ss", str(start), "-i", str(source), "-t", str(duration),
+        "-vn", "-acodec", "libmp3lame", "-q:a", "4",
+        str(out_mp3),
+    ], check=True, capture_output=True)
+
+
 def ensure_tools() -> None:
     for tool in ("ffmpeg", "ffprobe", "yt-dlp", "edge-tts"):
         if not shutil.which(tool):

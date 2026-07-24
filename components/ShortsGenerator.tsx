@@ -55,6 +55,19 @@ const VOICES = [
   { id: "es-MX-DaliaNeural", label: "Dalia (México, expresiva)" },
 ];
 
+const VOICE_MODES = [
+  {
+    id: "original",
+    label: "Audio original del vídeo",
+    desc: "Usa el audio y voz del vídeo original (más rápido, ideal para clips virales tal cual).",
+  },
+  {
+    id: "ai",
+    label: "Voz IA (reescrito por Claude)",
+    desc: "Claude reescribe el guion y una voz sintética lo narra. Tarda más pero suena limpio.",
+  },
+] as const;
+
 function fmtDuration(s: number): string {
   if (!s || !isFinite(s)) return "";
   const total = Math.round(s);
@@ -78,6 +91,7 @@ export default function ShortsGenerator() {
   const [generateJob, setGenerateJob] = useState<GenerateJob | null>(null);
   const [selectedHighlights, setSelectedHighlights] = useState<Set<number>>(new Set());
   const [style, setStyle] = useState<string>("blur");
+  const [voiceMode, setVoiceMode] = useState<string>("original");
   const [voice, setVoice] = useState<string>(VOICES[0].id);
   const [error, setError] = useState<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -126,6 +140,7 @@ export default function ShortsGenerator() {
           parent_id: analyzeJob.id,
           highlight_indices: [...selectedHighlights].sort((a, b) => a - b),
           style,
+          voice_mode: voiceMode,
           voice,
         }),
       });
@@ -304,6 +319,8 @@ export default function ShortsGenerator() {
           <StyleAndVoicePicker
             style={style}
             setStyle={setStyle}
+            voiceMode={voiceMode}
+            setVoiceMode={setVoiceMode}
             voice={voice}
             setVoice={setVoice}
           />
@@ -393,19 +410,23 @@ function ProgressBar({
 function StyleAndVoicePicker({
   style,
   setStyle,
+  voiceMode,
+  setVoiceMode,
   voice,
   setVoice,
 }: {
   style: string;
   setStyle: (s: string) => void;
+  voiceMode: string;
+  setVoiceMode: (m: string) => void;
   voice: string;
   setVoice: (v: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="space-y-4">
       <div>
         <div className="mb-2 text-sm font-medium text-white/80">Estilo visual</div>
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {STYLES.map((s) => (
             <label
               key={s.id}
@@ -431,22 +452,50 @@ function StyleAndVoicePicker({
           ))}
         </div>
       </div>
+
       <div>
         <div className="mb-2 text-sm font-medium text-white/80">Voz</div>
-        <select
-          value={voice}
-          onChange={(e) => setVoice(e.target.value)}
-          className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-white outline-none focus:border-violet-400"
-        >
-          {VOICES.map((v) => (
-            <option key={v.id} value={v.id} className="bg-neutral-900">
-              {v.label}
-            </option>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {VOICE_MODES.map((m) => (
+            <label
+              key={m.id}
+              className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                voiceMode === m.id
+                  ? "border-fuchsia-400 bg-fuchsia-500/10"
+                  : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
+              }`}
+            >
+              <input
+                type="radio"
+                name="voice-mode"
+                value={m.id}
+                checked={voiceMode === m.id}
+                onChange={() => setVoiceMode(m.id)}
+                className="mt-1 accent-fuchsia-500"
+              />
+              <span>
+                <span className="block font-medium text-white">{m.label}</span>
+                <span className="block text-xs text-white/50">{m.desc}</span>
+              </span>
+            </label>
           ))}
-        </select>
-        <div className="mt-2 text-xs text-white/40">
-          Voz IA neural gratis (Microsoft Edge). Idioma detectado automáticamente.
         </div>
+        {voiceMode === "ai" && (
+          <div className="mt-3">
+            <div className="mb-1 text-xs text-white/60">Voz IA a usar:</div>
+            <select
+              value={voice}
+              onChange={(e) => setVoice(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-white outline-none focus:border-violet-400"
+            >
+              {VOICES.map((v) => (
+                <option key={v.id} value={v.id} className="bg-neutral-900">
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     max_highlights_per_job: int = 5
     max_concurrent_jobs: int = 2
 
-    whisper_model: str = "small"
+    # `base` (74M params) es 2-3x más rápido que `small` (244M) en CPU.
+    # Para detectar highlights la calidad de base es suficiente porque
+    # Claude interpreta el sentido, no las palabras exactas. Subir a
+    # `small` o `medium` para transcripciones más fieles a costa de tiempo.
+    whisper_model: str = "base"
     whisper_compute_type: str = "int8"
     # Vacío = autodetectar idioma. Forzar solo si sabes que todos los vídeos
     # vienen en un idioma concreto (ej. "es", "en"). Forzar el idioma

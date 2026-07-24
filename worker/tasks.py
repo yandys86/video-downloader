@@ -119,6 +119,9 @@ def run_generate(job_id: str) -> None:
     inp = job["input"]
     highlight_indices: list[int] = inp["highlight_indices"]
     style: str = inp["style"]                 # 'original' | 'blur' | 'loop' | 'gradient'
+    # voice_mode: 'ai' (edge-tts + reescribe) o 'original' (audio del vídeo).
+    # Compat hacia atrás: si no se especifica, 'ai'.
+    voice_mode: str = inp.get("voice_mode", "ai")
     voice: str = inp.get("voice") or settings.default_tts_voice
     rate: str = inp.get("rate") or settings.default_tts_rate
     loop_video_path: str | None = inp.get("loop_video_path")
@@ -144,41 +147,61 @@ def run_generate(job_id: str) -> None:
             h = all_highlights[idx]
             n = i + 1
             base_progress = 0.05 + (i / max(total, 1)) * 0.90
-
-            storage.update_job(db, job_id, stage=f"short-{n}/script", progress=base_progress)
-            excerpt = _extract_text(transcript_segments, h["start"], h["end"])
-            script = llm.rewrite_as_short_script(excerpt) if rewrite else excerpt
-
-            storage.update_job(db, job_id, stage=f"short-{n}/tts", progress=base_progress + 0.10)
-            voice_mp3 = workdir / f"short-{n}-voice.mp3"
-            pipeline.synthesize_tts(script, voice, rate, voice_mp3)
-            voice_dur = pipeline.probe_duration(voice_mp3)
-
-            storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
-            tts_transcript = pipeline.transcribe(voice_mp3)
-            words = [w for seg in tts_transcript["segments"] for w in seg["words"]]
+            audio_mp3 = workdir / f"short-{n}-voice.mp3"
             ass_path = workdir / f"short-{n}.ass"
-            build_ass(words, str(ass_path))
+            script_text = ""
+
+            if voice_mode == "original":
+                # Modo rápido: audio real del vídeo + palabras del transcript
+                # inicial (offset a 0 del clip). Sin TTS, sin re-transcribir.
+                storage.update_job(db, job_id, stage=f"short-{n}/audio-slice", progress=base_progress + 0.10)
+                clip_dur = float(h["end"]) - float(h["start"])
+                pipeline.extract_audio_slice(source, float(h["start"]), clip_dur, audio_mp3)
+                audio_dur = pipeline.probe_duration(audio_mp3)
+
+                storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
+                words = _extract_words(transcript_segments, float(h["start"]), float(h["end"]))
+                if not words:
+                    # Sin palabras en ese tramo, fallback a captions vacías
+                    # (el video tendrá audio pero sin captions).
+                    words = []
+                build_ass(words, str(ass_path))
+                script_text = _extract_text(transcript_segments, float(h["start"]), float(h["end"]))
+            else:
+                # Modo 'ai': reescribe + TTS + re-transcribe
+                storage.update_job(db, job_id, stage=f"short-{n}/script", progress=base_progress)
+                excerpt = _extract_text(transcript_segments, float(h["start"]), float(h["end"]))
+                script_text = llm.rewrite_as_short_script(excerpt) if rewrite else excerpt
+
+                storage.update_job(db, job_id, stage=f"short-{n}/tts", progress=base_progress + 0.10)
+                pipeline.synthesize_tts(script_text, voice, rate, audio_mp3)
+                audio_dur = pipeline.probe_duration(audio_mp3)
+
+                storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
+                tts_transcript = pipeline.transcribe(audio_mp3)
+                words = [w for seg in tts_transcript["segments"] for w in seg["words"]]
+                build_ass(words, str(ass_path))
 
             storage.update_job(db, job_id, stage=f"short-{n}/background", progress=base_progress + 0.50)
             bg_mp4 = workdir / f"short-{n}-bg.mp4"
-            _build_bg(style, source, h["start"], voice_dur, bg_mp4, loop_video_path)
+            _build_bg(style, source, float(h["start"]), audio_dur, bg_mp4, loop_video_path)
 
             storage.update_job(db, job_id, stage=f"short-{n}/compose", progress=base_progress + 0.75)
             out_mp4 = outdir / f"{job_id}-short-{n}.mp4"
-            pipeline.compose_final(bg_mp4, voice_mp3, ass_path, out_mp4)
+            pipeline.compose_final(bg_mp4, audio_mp3, ass_path, out_mp4)
 
             outputs.append({
                 "index": idx,
                 "file": str(out_mp4),
-                "duration": voice_dur,
+                "duration": audio_dur,
                 "hook": h.get("hook", ""),
-                "script": script,
+                "script": script_text,
+                "voice_mode": voice_mode,
             })
 
         storage.update_job(
             db, job_id, status="done", stage="done", progress=1.0,
-            result={"shorts": outputs, "style": style, "voice": voice},
+            result={"shorts": outputs, "style": style, "voice": voice, "voice_mode": voice_mode},
         )
     except Exception as e:
         storage.update_job(
@@ -209,3 +232,25 @@ def _extract_text(segments: list[dict], start: float, end: float) -> str:
             continue
         parts.append(s["text"].strip())
     return " ".join(parts).strip()
+
+
+def _extract_words(segments: list[dict], start: float, end: float) -> list[dict]:
+    """Devuelve las palabras del transcript que caen en [start, end] con
+    timestamps desplazados a 0 (el clip empieza en 0, no en start absoluto).
+    Se usa en voice_mode='original' para construir captions sin re-transcribir.
+    """
+    out = []
+    for s in segments:
+        if s["end"] < start or s["start"] > end:
+            continue
+        for w in s.get("words") or []:
+            w_start = float(w["start"])
+            w_end = float(w["end"])
+            if w_end < start or w_start > end:
+                continue
+            out.append({
+                "word": w["word"],
+                "start": max(0.0, w_start - start),
+                "end": max(0.0, w_end - start),
+            })
+    return out
