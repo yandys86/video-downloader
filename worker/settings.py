@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     workspace_dir: str = "/var/lib/shorts-worker"
     db_path: str = "/var/lib/shorts-worker/jobs.db"
 
-    max_input_duration_seconds: int = 1200
+    # Duración máxima del vídeo de entrada. 3600s = 60 min cubre la mayoría
+    # de podcasts, charlas y entrevistas. Whisper base en CPU procesa 60min
+    # en ~5-10 min. Subir a 7200 (2h) si quieres procesar contenido largo.
+    max_input_duration_seconds: int = 3600
     max_highlights_per_job: int = 5
     max_concurrent_jobs: int = 2
 
