@@ -19,6 +19,12 @@ async def lifespan(app: FastAPI):
     ensure_tools()
     storage.init_db(settings.db_path)
     Path(settings.workspace_dir).mkdir(parents=True, exist_ok=True)
+    # Marcar como error cualquier job que quedó "running" al arrancar:
+    # implica que el worker se reinició durante el procesamiento y esos
+    # threads ya no existen. Sin esto quedan huérfanos para siempre.
+    orphans = storage.mark_orphaned_running_jobs(settings.db_path)
+    if orphans:
+        print(f"[startup] marked {orphans} orphaned running jobs as error")
     yield
 
 

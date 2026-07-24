@@ -101,3 +101,23 @@ def count_jobs_by_ip_last_24h(db_path: str, ip: str) -> int:
             (ip, cutoff),
         ).fetchone()
     return int(row["n"] or 0)
+
+
+def mark_orphaned_running_jobs(db_path: str) -> int:
+    """Marca como error los jobs que quedaron 'running'/'pending' de un run anterior.
+
+    Se llama al arrancar el worker: si un job está en estado activo pero el
+    proceso que lo estaba ejecutando ya no existe (por reinicio del service),
+    queda huérfano. Sin este cleanup, aparecerían "running" para siempre.
+    """
+    now = int(time.time())
+    with _conn(db_path) as db:
+        res = db.execute(
+            "UPDATE jobs SET status = 'error', error = ?, updated_at = ? "
+            "WHERE status IN ('running', 'pending')",
+            (
+                "El worker se reinició durante el procesamiento. Reintenta el análisis.",
+                now,
+            ),
+        )
+    return res.rowcount
