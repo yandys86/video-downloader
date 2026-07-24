@@ -1,11 +1,12 @@
 """FastAPI worker para generar Shorts. Se despliega en Proxmox CT 222."""
 
+import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import storage, tasks
@@ -22,6 +23,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Shorts Worker", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(sqlite3.OperationalError)
+async def _sqlite_locked_handler(request: Request, exc: sqlite3.OperationalError):
+    # "database is locked" es transitorio (contention). Devolvemos 503 con
+    # Retry-After para que el cliente reintente en vez de mostrar 500 al usuario.
+    if "locked" in str(exc).lower():
+        return JSONResponse(
+            {"detail": "worker temporalmente ocupado, reintenta"},
+            status_code=503,
+            headers={"Retry-After": "2"},
+        )
+    return JSONResponse({"detail": f"db error: {exc}"}, status_code=500)
 
 
 def require_secret(x_worker_secret: Annotated[str | None, Header()] = None) -> None:

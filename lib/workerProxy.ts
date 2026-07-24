@@ -29,8 +29,16 @@ export async function callWorker(
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(`${WORKER_URL}${path}`, { ...init, headers, cache: "no-store" });
-  return res;
+  // Reintento transparente en 503 (worker devuelve 503 en locks SQLite
+  // transitorios). Máximo 3 intentos con Retry-After (default 1s).
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    res = await fetch(`${WORKER_URL}${path}`, { ...init, headers, cache: "no-store" });
+    if (res.status !== 503 || attempt === 3) break;
+    const retryAfter = Number(res.headers.get("retry-after") || "1");
+    await new Promise((r) => setTimeout(r, Math.max(500, retryAfter * 1000)));
+  }
+  return res!;
 }
 
 export async function callWorkerJson<T = unknown>(

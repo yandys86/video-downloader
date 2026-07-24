@@ -140,11 +140,24 @@ export default function ShortsGenerator() {
 
   function pollJob(kind: "analyze" | "generate", jobId: string) {
     clearPoll();
+    let consecutiveFailures = 0;
+    const MAX_CONSECUTIVE_FAILURES = 5; // ~12s de errores transitorios antes de rendirse
     const tick = async () => {
       try {
         const res = await fetch(`/api/shorts/job/${jobId}`);
+        // 5xx transitorios: no reventar la UI, deja que el siguiente tick lo intente
+        if (res.status >= 500 && res.status < 600) {
+          consecutiveFailures++;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            clearPoll();
+            setError("El servidor está tardando en responder. Reintenta en unos segundos.");
+            setStep("error");
+          }
+          return;
+        }
         const job = await res.json();
         if (!res.ok) throw new Error(job.error || "No se pudo consultar el estado");
+        consecutiveFailures = 0; // reset al primer éxito
         if (kind === "analyze") setAnalyzeJob({ ...job });
         else setGenerateJob({ ...job });
 
@@ -158,9 +171,13 @@ export default function ShortsGenerator() {
           setStep("error");
         }
       } catch (e: any) {
-        clearPoll();
-        setError(e.message);
-        setStep("error");
+        // Fallos de red o parse: se cuentan igual que 5xx
+        consecutiveFailures++;
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          clearPoll();
+          setError(e.message || "Error de red persistente");
+          setStep("error");
+        }
       }
     };
     tick();

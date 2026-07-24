@@ -36,8 +36,16 @@ def init_db(db_path: str) -> None:
 
 @contextmanager
 def _conn(db_path: str):
-    db = sqlite3.connect(db_path, timeout=10, isolation_level=None)
+    # timeout: SQLite espera N segundos si la BBDD está locked antes de
+    # devolver OperationalError. Subimos a 30s para absorber picos.
+    db = sqlite3.connect(db_path, timeout=30, isolation_level=None)
     db.row_factory = sqlite3.Row
+    # WAL mode: permite N lectores concurrentes junto a 1 escritor.
+    # Sin WAL, cualquier lectura durante una escritura da "database is locked".
+    # WAL persiste a nivel de fichero — set idempotente por conexión.
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")  # más rápido con WAL, sin perder durabilidad relevante
+    db.execute("PRAGMA busy_timeout=30000")  # 30s (redundante con timeout=, defensa en profundidad)
     try:
         yield db
     finally:
