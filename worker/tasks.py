@@ -5,7 +5,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import llm, pipeline, storage
+from . import llm, pipeline, storage, youtube_subs
 from .captions import build_ass
 from .settings import settings
 
@@ -49,22 +49,45 @@ def run_analyze(job_id: str) -> None:
     url = job["input"]["url"]
 
     try:
-        storage.update_job(db, job_id, status="running", stage="download", progress=0.05)
-        source = pipeline.download_source(url, _sources_dir(), job_id)
+        # ── Fast path: YouTube auto-captions ──────────────────────────
+        # Si es un vídeo de YouTube con auto-captions, saltamos descarga
+        # + Whisper. 100x más rápido (~5s vs varios minutos).
+        transcript = None
+        source = None
+        if youtube_subs.is_youtube_url(url):
+            storage.update_job(db, job_id, status="running", stage="youtube_captions", progress=0.05)
+            transcript = youtube_subs.try_youtube_captions(url)
 
-        duration = pipeline.probe_duration(source)
-        if duration > settings.max_input_duration_seconds:
-            raise ValueError(
-                f"Vídeo demasiado largo ({int(duration)}s). Máximo permitido: "
-                f"{settings.max_input_duration_seconds}s."
-            )
+        if transcript is not None:
+            # Con captions ya hechas, aún necesitamos el source path para el
+            # generate posterior. Lo descargamos igual, pero el usuario ya
+            # tiene los highlights: no bloquea el analyze.
+            storage.update_job(db, job_id, stage="download", progress=0.4)
+            source = pipeline.download_source(url, _sources_dir(), job_id)
+            duration = pipeline.probe_duration(source)
+            if duration > settings.max_input_duration_seconds:
+                raise ValueError(
+                    f"Vídeo demasiado largo ({int(duration)}s). Máximo permitido: "
+                    f"{settings.max_input_duration_seconds}s."
+                )
+        else:
+            # ── Fallback: descargar vídeo + Whisper (flujo original) ──
+            storage.update_job(db, job_id, status="running", stage="download", progress=0.05)
+            source = pipeline.download_source(url, _sources_dir(), job_id)
 
-        storage.update_job(db, job_id, stage="extract_audio", progress=0.15)
-        audio = _work_dir(job_id) / "source.mp3"
-        pipeline.extract_audio(source, audio)
+            duration = pipeline.probe_duration(source)
+            if duration > settings.max_input_duration_seconds:
+                raise ValueError(
+                    f"Vídeo demasiado largo ({int(duration)}s). Máximo permitido: "
+                    f"{settings.max_input_duration_seconds}s."
+                )
 
-        storage.update_job(db, job_id, stage="transcribe", progress=0.25)
-        transcript = pipeline.transcribe(audio)
+            storage.update_job(db, job_id, stage="extract_audio", progress=0.15)
+            audio = _work_dir(job_id) / "source.mp3"
+            pipeline.extract_audio(source, audio)
+
+            storage.update_job(db, job_id, stage="transcribe", progress=0.25)
+            transcript = pipeline.transcribe(audio)
 
         # Rechazo temprano si el audio tiene demasiado poco diálogo para
         # generar Shorts con sentido (música, silencio, efectos).
