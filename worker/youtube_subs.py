@@ -26,7 +26,7 @@ def is_youtube_url(url: str) -> bool:
 
 def try_youtube_captions(
     url: str,
-    preferred_langs: tuple[str, ...] = ("es", "en", "es-419", "es-ES", "en-US"),
+    preferred_langs: tuple[str, ...] = ("es", "en"),
 ) -> Optional[dict]:
     """Intenta descargar auto-captions de YouTube en formato JSON3.
 
@@ -35,47 +35,40 @@ def try_youtube_captions(
         {"segments": [...], "language": "es"}
 
     Rápido (~3-8s típicamente): solo metadata + subtítulos, NO baja el vídeo.
+
+    Intenta cada idioma preferido POR SEPARADO para tolerar rate-limits
+    parciales (si el primero da 429, el siguiente puede funcionar).
     """
     if not is_youtube_url(url):
         return None
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        # Descarga cualquier subtítulo disponible en los idiomas preferidos.
-        # --skip-download evita bajar el vídeo (que es lo pesado).
-        lang_list = ",".join(preferred_langs)
-        cmd = [
-            "yt-dlp",
-            "--skip-download",
-            "--write-auto-sub",
-            "--write-sub",
-            "--sub-langs", lang_list,
-            "--sub-format", "json3",
-            "-o", str(tmp_path / "sub.%(ext)s"),
-            url,
-        ]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, timeout=45)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            return None
-
-        # Buscar el JSON3 descargado (yt-dlp añade sufijo con idioma).
-        json_files = sorted(tmp_path.glob("sub*.json3"))
-        if not json_files:
-            return None
-
-        # Priorizar por orden de preferencia de idioma.
         picked = None
         for lang in preferred_langs:
-            for f in json_files:
-                if f".{lang}." in f.name:
-                    picked = (f, lang)
-                    break
-            if picked:
+            cmd = [
+                "yt-dlp",
+                "--skip-download",
+                "--write-auto-sub",
+                "--write-sub",
+                "--sub-langs", lang,
+                "--sub-format", "json3",
+                "-o", str(tmp_path / f"sub_{lang}.%(ext)s"),
+                url,
+            ]
+            try:
+                # check=False: yt-dlp puede exit 1 aunque el archivo esté escrito
+                # (ej. WARNING/rate limit en un sub-step). Comprobamos por archivo.
+                subprocess.run(cmd, check=False, capture_output=True, timeout=30)
+            except subprocess.TimeoutExpired:
+                continue
+            matches = list(tmp_path.glob(f"sub_{lang}*.json3"))
+            if matches and matches[0].stat().st_size > 100:
+                picked = (matches[0], lang)
                 break
+
         if not picked:
-            # Coger el primero disponible.
-            picked = (json_files[0], _lang_from_filename(json_files[0].name))
+            return None
 
         subs_file, lang = picked
         try:
