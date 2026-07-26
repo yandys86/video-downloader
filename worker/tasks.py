@@ -154,6 +154,8 @@ def run_generate(job_id: str) -> None:
     inp = job["input"]
     highlight_indices: list[int] = inp.get("highlight_indices") or []
     custom_ranges: list[dict] = inp.get("custom_ranges") or []
+    # Duración objetivo por Short. None = usar el rango completo del highlight/custom.
+    clip_duration: float | None = inp.get("clip_duration")
     style: str = inp["style"]                 # 'original' | 'blur' | 'loop' | 'gradient'
     # voice_mode: 'ai' (edge-tts + reescribe) o 'original' (audio del vídeo).
     voice_mode: str = inp.get("voice_mode", "ai")
@@ -171,19 +173,32 @@ def run_generate(job_id: str) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Lista unificada de {start, end, hook, tag} — auto highlights + custom.
+    # Si clip_duration está fijo, cada rango se trunca a start + clip_duration.
+    def _apply_duration(start: float, end: float) -> float:
+        if clip_duration is None:
+            return end
+        return start + float(clip_duration)
+
     render_list: list[dict] = []
     for idx in highlight_indices:
         if 0 <= idx < len(all_highlights):
             h = all_highlights[idx]
+            s = float(h["start"])
+            e = _apply_duration(s, float(h["end"]))
             render_list.append({
-                "start": float(h["start"]),
-                "end": float(h["end"]),
+                "start": s,
+                "end": e,
                 "hook": h.get("hook", ""),
                 "tag": f"auto-{idx}",
             })
     for i, cr in enumerate(custom_ranges):
         start = float(cr["start"])
-        end = float(cr["end"])
+        raw_end = cr.get("end")
+        if raw_end is None:
+            # end no dado: usa clip_duration o default 30s
+            end = start + (float(clip_duration) if clip_duration else 30.0)
+        else:
+            end = _apply_duration(start, float(raw_end))
         if end > start:
             render_list.append({
                 "start": start,

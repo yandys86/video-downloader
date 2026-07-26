@@ -56,7 +56,8 @@ class AnalyzeRequest(BaseModel):
 
 class CustomRange(BaseModel):
     start: float = Field(..., ge=0)
-    end: float = Field(..., gt=0)
+    # end es opcional: si se omite, se usa start + clip_duration (o el default).
+    end: float | None = Field(None, gt=0)
     hook: str = ""
 
 
@@ -65,6 +66,10 @@ class GenerateRequest(BaseModel):
     # Al menos uno de highlight_indices o custom_ranges debe tener elementos.
     highlight_indices: list[int] = Field(default_factory=list, max_length=10)
     custom_ranges: list[CustomRange] = Field(default_factory=list, max_length=10)
+    # Duración objetivo del Short en segundos. None = usar el rango completo
+    # del highlight/custom range (comportamiento auto).
+    # Cuando se especifica, cada clip se recorta a [start, start+clip_duration].
+    clip_duration: float | None = Field(None, gt=0, le=180)
     style: str = Field(..., pattern=r"^(original|blur|loop|gradient)$")
     # 'ai' = edge-tts + guion reescrito. 'original' = audio real del vídeo
     # (más rápido, útil para clips virales tal-cual del vídeo original).

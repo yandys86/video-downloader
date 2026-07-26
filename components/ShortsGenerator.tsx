@@ -31,22 +31,19 @@ type GenerateJob = {
 type Step = "idle" | "analyzing" | "picking" | "generating" | "done" | "error";
 
 const STYLES = [
-  {
-    id: "original",
-    label: "Recorte del original",
-    desc: "Trozo del vídeo original recentrado a 9:16",
-  },
-  {
-    id: "blur",
-    label: "Blur + vídeo centrado",
-    desc: "Fondo blureado del propio vídeo con el vídeo nítido encima",
-  },
-  {
-    id: "gradient",
-    label: "Gradiente + captions grandes",
-    desc: "Fondo minimalista, los captions son protagonistas",
-  },
+  { id: "original", label: "Original", desc: "Recorte 9:16 del vídeo" },
+  { id: "blur", label: "Blur", desc: "Fondo blureado + vídeo centrado" },
+  { id: "gradient", label: "Gradiente", desc: "Fondo minimalista con captions grandes" },
 ] as const;
+
+// Duraciones profesionales estilo Instagram/TikTok. null = usar el rango del highlight tal cual.
+const DURATIONS: Array<{ value: number | null; label: string }> = [
+  { value: 15, label: "15s" },
+  { value: 30, label: "30s" },
+  { value: 45, label: "45s" },
+  { value: 60, label: "60s" },
+  { value: null, label: "Auto" },
+];
 
 const VOICES = [
   { id: "es-ES-AlvaroNeural", label: "Álvaro (España, energético)" },
@@ -152,7 +149,8 @@ export default function ShortsGenerator() {
   const [analyzeJob, setAnalyzeJob] = useState<AnalyzeJob | null>(null);
   const [generateJob, setGenerateJob] = useState<GenerateJob | null>(null);
   const [selectedHighlights, setSelectedHighlights] = useState<Set<number>>(new Set());
-  const [customRanges, setCustomRanges] = useState<Array<{ start: string; end: string; hook: string }>>([]);
+  const [customRanges, setCustomRanges] = useState<Array<{ start: string; hook: string }>>([]);
+  const [clipDuration, setClipDuration] = useState<number | null>(30); // por defecto 30s
   const [style, setStyle] = useState<string>("blur");
   const [voiceMode, setVoiceMode] = useState<string>("original");
   const [voice, setVoice] = useState<string>(VOICES[0].id);
@@ -209,15 +207,13 @@ export default function ShortsGenerator() {
 
   async function submitGenerate() {
     if (!analyzeJob?.result) return;
-    // Parsea rangos custom válidos.
+    // Parsea rangos custom: solo necesita start (la duración la marca clipDuration global).
     const validCustom = customRanges
-      .map((r) => ({ start: parseTime(r.start), end: parseTime(r.end), hook: r.hook || "" }))
-      .filter((r): r is { start: number; end: number; hook: string } => (
-        r.start !== null && r.end !== null && r.end > r.start
-      ));
+      .map((r) => ({ start: parseTime(r.start), hook: r.hook || "" }))
+      .filter((r): r is { start: number; hook: string } => r.start !== null);
     if (selectedHighlights.size === 0 && validCustom.length === 0) return;
     if (customRanges.length > validCustom.length) {
-      setError("Alguno de los rangos personalizados es inválido. Usa mm:ss (ej. 1:30 → 2:15).");
+      setError("Formato de tiempo inválido en algún rango. Usa mm:ss (ej. 1:30).");
       return;
     }
 
@@ -231,7 +227,8 @@ export default function ShortsGenerator() {
         body: JSON.stringify({
           parent_id: analyzeJob.id,
           highlight_indices: [...selectedHighlights].sort((a, b) => a - b),
-          custom_ranges: validCustom,
+          custom_ranges: validCustom,   // solo start; end lo pone el backend con clip_duration
+          clip_duration: clipDuration,   // null = usar rango completo del highlight
           style,
           voice_mode: voiceMode,
           voice,
@@ -466,11 +463,11 @@ export default function ShortsGenerator() {
                       onClick={(e) => {
                         e.stopPropagation();
                         // Convertir este auto highlight en un rango editable
+                        // (solo start — la duración la controla el pill de arriba)
                         setCustomRanges((prev) => [
                           ...prev,
                           {
                             start: fmtStart(h.start),
-                            end: fmtStart(h.end),
                             hook: h.hook || "",
                           },
                         ]);
@@ -481,9 +478,9 @@ export default function ShortsGenerator() {
                         });
                       }}
                       className="shrink-0 rounded bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10"
-                      title="Ajustar los tiempos exactos de este highlight"
+                      title="Convertir en momento editable con inicio personalizado"
                     >
-                      ✏️ Editar
+                      ✏️
                     </button>
                   </div>
                 </li>
@@ -491,71 +488,101 @@ export default function ShortsGenerator() {
             })}
           </ul>
 
-          {/* Rangos personalizados */}
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <div className="text-sm font-medium text-white">Rango personalizado</div>
-                <div className="text-xs text-white/50">
-                  ¿Quieres un momento distinto? Añade start y end en formato <code className="text-white/70">mm:ss</code>.
+          {/* Rangos personalizados — versión compacta: solo start (la duración la marca el pill global) */}
+          {customRanges.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-medium text-white/70">Momentos personalizados</div>
+              {customRanges.map((r, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input
+                    value={r.start}
+                    onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, start: e.target.value } : x))}
+                    placeholder="mm:ss"
+                    className="w-24 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+                  />
+                  <input
+                    value={r.hook}
+                    onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, hook: e.target.value } : x))}
+                    placeholder="Título (opcional)"
+                    className="flex-1 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+                  />
+                  <button
+                    onClick={() => setCustomRanges((p) => p.filter((_, j) => j !== i))}
+                    className="shrink-0 rounded bg-white/5 px-2 py-1.5 text-xs text-white/60 hover:bg-red-500/20 hover:text-red-200"
+                    title="Quitar"
+                  >
+                    ✕
+                  </button>
                 </div>
-              </div>
-              <button
-                onClick={() => setCustomRanges((p) => [...p, { start: "", end: "", hook: "" }])}
-                className="rounded bg-fuchsia-500/20 px-3 py-1 text-xs text-fuchsia-200 hover:bg-fuchsia-500/30"
-              >
-                + Añadir
-              </button>
+              ))}
             </div>
-            {customRanges.length > 0 && (
-              <ul className="mt-2 space-y-2">
-                {customRanges.map((r, i) => (
-                  <li key={i} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                    <input
-                      value={r.start}
-                      onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, start: e.target.value } : x))}
-                      placeholder="Inicio (ej. 1:30)"
-                      className="w-full sm:w-32 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
-                    />
-                    <span className="hidden sm:inline text-white/40">→</span>
-                    <input
-                      value={r.end}
-                      onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, end: e.target.value } : x))}
-                      placeholder="Fin (ej. 2:15)"
-                      className="w-full sm:w-32 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
-                    />
-                    <input
-                      value={r.hook}
-                      onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, hook: e.target.value } : x))}
-                      placeholder="Título opcional"
-                      className="flex-1 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
-                    />
-                    <button
-                      onClick={() => setCustomRanges((p) => p.filter((_, j) => j !== i))}
-                      className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30"
-                    >
-                      Quitar
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+          )}
+          <button
+            onClick={() => setCustomRanges((p) => [...p, { start: "", hook: "" }])}
+            className="w-full rounded-lg border border-dashed border-white/15 py-2 text-xs text-white/50 hover:border-fuchsia-400/50 hover:text-fuchsia-200"
+          >
+            + Añadir momento personalizado
+          </button>
+
+          {/* Panel de controles: duración + estilo + voz — pills profesionales */}
+          <div className="space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            {/* Duración */}
+            <div>
+              <div className="mb-2 flex items-baseline justify-between">
+                <span className="text-sm font-medium text-white">⏱️ Duración del Reel</span>
+                <span className="text-xs text-white/40">
+                  {clipDuration === null ? "usa el tramo detectado" : `cada clip será de ${clipDuration}s`}
+                </span>
+              </div>
+              <PillGroup
+                options={DURATIONS.map((d) => ({ id: String(d.value), label: d.label }))}
+                value={String(clipDuration)}
+                onChange={(v) => setClipDuration(v === "null" ? null : Number(v))}
+              />
+            </div>
+
+            {/* Estilo */}
+            <div>
+              <div className="mb-2 text-sm font-medium text-white">🎬 Estilo</div>
+              <PillGroup
+                options={STYLES.map((s) => ({ id: s.id, label: s.label }))}
+                value={style}
+                onChange={setStyle}
+              />
+              <div className="mt-1 text-xs text-white/40">
+                {STYLES.find((s) => s.id === style)?.desc}
+              </div>
+            </div>
+
+            {/* Voz */}
+            <div>
+              <div className="mb-2 text-sm font-medium text-white">🎙️ Voz</div>
+              <PillGroup
+                options={[
+                  { id: "original", label: "Original del vídeo" },
+                  { id: "ai", label: "Voz IA" },
+                ]}
+                value={voiceMode}
+                onChange={setVoiceMode}
+              />
+              {voiceMode === "ai" && (
+                <select
+                  value={voice}
+                  onChange={(e) => setVoice(e.target.value)}
+                  className="mt-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-violet-400"
+                >
+                  {VOICES.map((v) => (
+                    <option key={v.id} value={v.id} className="bg-neutral-900">
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
 
-          <StyleAndVoicePicker
-            style={style}
-            setStyle={setStyle}
-            voiceMode={voiceMode}
-            setVoiceMode={setVoiceMode}
-            voice={voice}
-            setVoice={setVoice}
-          />
-
           {(() => {
-            const validCustomCount = customRanges.filter((r) => {
-              const s = parseTime(r.start), e = parseTime(r.end);
-              return s !== null && e !== null && e > s;
-            }).length;
+            const validCustomCount = customRanges.filter((r) => parseTime(r.start) !== null).length;
             const totalCount = selectedHighlights.size + validCustomCount;
             return (
               <button
@@ -564,8 +591,8 @@ export default function ShortsGenerator() {
                 className="w-full rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-40"
               >
                 {totalCount === 0
-                  ? "Selecciona al menos 1 momento o añade un rango"
-                  : `Generar ${totalCount} Short${totalCount === 1 ? "" : "s"}`}
+                  ? "Selecciona al menos 1 momento"
+                  : `Generar ${totalCount} Reel${totalCount === 1 ? "" : "s"}`}
               </button>
             );
           })()}
@@ -640,6 +667,38 @@ function ProgressBar({
       <div className="mt-3 text-xs text-white/40">
         Puede tardar entre 30 s y 3 min según la duración del vídeo. No cierres esta pestaña.
       </div>
+    </div>
+  );
+}
+
+function PillGroup({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ id: string; label: string }>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const active = o.id === value;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+              active
+                ? "bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow-md shadow-violet-500/30"
+                : "border border-white/15 bg-white/[0.03] text-white/70 hover:border-white/30 hover:text-white"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
