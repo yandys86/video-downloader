@@ -19,6 +19,13 @@ _YOUTUBE_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|shorts/|embed/)|youtu\.be/)([A-Za-z0-9_-]{11})"
 )
 
+# Marcadores que YouTube emite para música, aplausos, risas — no son letra real.
+_NON_SPEECH_MARKER = re.compile(
+    r"[\[\(]\s*(m[uú]sica|music|aplausos|applause|risas|laughter|silbidos|whistles|"
+    r"cheering|instrumental|sonido|sound)\s*[\]\)]",
+    re.IGNORECASE,
+)
+
 
 def is_youtube_url(url: str) -> bool:
     return bool(_YOUTUBE_ID_RE.search(url))
@@ -152,3 +159,52 @@ def ensure_available() -> bool:
     añade dependencias nuevas — usa el mismo binario. Retornamos siempre
     True si yt-dlp está disponible."""
     return shutil.which("yt-dlp") is not None
+
+
+def captions_look_useful(transcript: dict, min_duration: float = 30.0) -> bool:
+    """Heurística: True si las captions de YouTube parecen tener contenido
+    hablado real (no solo [música]/[aplausos] o silencio).
+
+    Se usa para decidir si merece la pena confiar en ellas o hacer fallback
+    a Whisper. Reggaeton, música y clips instrumentales pierden por aquí
+    porque YouTube no transcribe letras.
+    """
+    segments = transcript.get("segments") or []
+    if not segments:
+        return False
+
+    total_words = 0
+    marker_count = 0
+    total_segments = 0
+    for s in segments:
+        text = (s.get("text") or "").strip()
+        if not text:
+            continue
+        total_segments += 1
+        # Contar marcadores no-hablados
+        markers = _NON_SPEECH_MARKER.findall(text)
+        marker_count += len(markers)
+        # Quitar marcadores del texto y contar palabras reales
+        clean = _NON_SPEECH_MARKER.sub("", text).strip()
+        if clean:
+            total_words += len(clean.split())
+
+    if total_segments == 0:
+        return False
+
+    # Duración cubierta por las captions
+    covered = segments[-1].get("end", 0) - segments[0].get("start", 0)
+    covered = max(covered, min_duration)
+
+    # Ratio marcadores / segmentos: >30% son solo marcadores → mala calidad
+    marker_ratio = marker_count / max(total_segments, 1)
+    # Palabras por segundo: habla normal 2-3, canto 1-2, música pura <0.5
+    words_per_sec = total_words / covered
+
+    # Reglas de exclusión (cualquiera dispara fallback):
+    if marker_ratio > 0.30:
+        return False
+    if words_per_sec < 0.6:
+        return False
+
+    return True

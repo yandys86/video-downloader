@@ -438,8 +438,7 @@ export default function ShortsGenerator() {
               return (
                 <li
                   key={i}
-                  onClick={() => toggleHighlight(i)}
-                  className={`cursor-pointer rounded-xl border px-4 py-3 transition ${
+                  className={`rounded-xl border px-4 py-3 transition ${
                     active
                       ? "border-violet-400 bg-violet-500/15"
                       : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
@@ -447,13 +446,14 @@ export default function ShortsGenerator() {
                 >
                   <div className="flex items-start gap-3">
                     <div
-                      className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded border ${
+                      onClick={() => toggleHighlight(i)}
+                      className={`mt-0.5 grid size-5 shrink-0 cursor-pointer place-items-center rounded border ${
                         active ? "border-violet-300 bg-violet-500" : "border-white/30"
                       }`}
                     >
                       {active && <span className="text-xs text-white">✓</span>}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => toggleHighlight(i)}>
                       <div className="flex items-center gap-2 text-xs text-white/50">
                         <span>{fmtStart(h.start)} → {fmtStart(h.end)}</span>
                         <span>·</span>
@@ -462,6 +462,29 @@ export default function ShortsGenerator() {
                       <div className="mt-1 font-medium text-white">"{h.hook}"</div>
                       <div className="mt-1 text-sm text-white/60">{h.reason}</div>
                     </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Convertir este auto highlight en un rango editable
+                        setCustomRanges((prev) => [
+                          ...prev,
+                          {
+                            start: fmtStart(h.start),
+                            end: fmtStart(h.end),
+                            hook: h.hook || "",
+                          },
+                        ]);
+                        setSelectedHighlights((prev) => {
+                          const next = new Set(prev);
+                          next.delete(i);
+                          return next;
+                        });
+                      }}
+                      className="shrink-0 rounded bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                      title="Ajustar los tiempos exactos de este highlight"
+                    >
+                      ✏️ Editar
+                    </button>
                   </div>
                 </li>
               );

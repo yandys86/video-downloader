@@ -5,7 +5,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import llm, pipeline, storage, youtube_subs
+from . import llm, pipeline, storage, transcribe_cloud, youtube_subs
 from .captions import build_ass
 from .settings import settings
 
@@ -50,13 +50,17 @@ def run_analyze(job_id: str) -> None:
 
     try:
         # ── Fast path: YouTube auto-captions ──────────────────────────
-        # Si es un vídeo de YouTube con auto-captions, saltamos descarga
-        # + Whisper. 100x más rápido (~5s vs varios minutos).
+        # Si es un vídeo de YouTube con auto-captions ÚTILES (no música
+        # pura), saltamos Whisper. 100x más rápido (~5s vs varios min).
+        # Si las captions son basura (mayoría [música]), caemos a Whisper.
         transcript = None
         source = None
         if youtube_subs.is_youtube_url(url):
             storage.update_job(db, job_id, status="running", stage="youtube_captions", progress=0.05)
-            transcript = youtube_subs.try_youtube_captions(url)
+            yt_transcript = youtube_subs.try_youtube_captions(url)
+            if yt_transcript and youtube_subs.captions_look_useful(yt_transcript):
+                transcript = yt_transcript
+            # Si no útiles, transcript sigue None → caeremos al bloque else
 
         if transcript is not None:
             # Con captions ya hechas, aún necesitamos el source path para el
@@ -71,7 +75,7 @@ def run_analyze(job_id: str) -> None:
                     f"{settings.max_input_duration_seconds}s."
                 )
         else:
-            # ── Fallback: descargar vídeo + Whisper (flujo original) ──
+            # ── Fallback: descargar vídeo + (Groq | Whisper local) ──
             storage.update_job(db, job_id, status="running", stage="download", progress=0.05)
             source = pipeline.download_source(url, _sources_dir(), job_id)
 
@@ -86,8 +90,16 @@ def run_analyze(job_id: str) -> None:
             audio = _work_dir(job_id) / "source.mp3"
             pipeline.extract_audio(source, audio)
 
-            storage.update_job(db, job_id, stage="transcribe", progress=0.25)
-            transcript = pipeline.transcribe(audio)
+            # 1er intento: Groq (cloud, gratis, ~20x más rápido que Whisper
+            # local y mejor calidad, sobre todo para música/lyrics).
+            if transcribe_cloud.is_available():
+                storage.update_job(db, job_id, stage="transcribe_groq", progress=0.25)
+                transcript = transcribe_cloud.transcribe_with_groq(audio)
+
+            # Fallback: Whisper local si Groq no está configurado o falló.
+            if transcript is None:
+                storage.update_job(db, job_id, stage="transcribe", progress=0.25)
+                transcript = pipeline.transcribe(audio)
 
         # Rechazo temprano si el audio tiene demasiado poco diálogo para
         # generar Shorts con sentido (música, silencio, efectos).

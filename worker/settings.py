@@ -35,6 +35,13 @@ class Settings(BaseSettings):
 
     pexels_api_key: str = ""
 
+    # Groq API para transcripción cloud (whisper-large-v3-turbo).
+    # Gratis (free tier ~4000min/día), 20x más rápido que Whisper local
+    # y mucha mejor calidad que YouTube auto-captions. Obtén una key en
+    # https://console.groq.com/keys — deja vacío para saltar Groq.
+    groq_api_key: str = ""
+    groq_model: str = "whisper-large-v3-turbo"
+
     # Watermark opcional en la esquina de cada Short. Vacío = sin watermark.
     # Ej: "tuvideodown.com" — se dibuja con drawtext de ffmpeg.
     watermark_text: str = ""
