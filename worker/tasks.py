@@ -5,7 +5,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import llm, pipeline, storage, transcribe_cloud, youtube_subs
+from . import llm, pipeline, push, storage, transcribe_cloud, youtube_subs
 from .captions import build_ass
 from .settings import settings
 
@@ -132,10 +132,17 @@ def run_analyze(job_id: str) -> None:
             "highlights": highlights,
         }
         storage.update_job(db, job_id, status="done", stage="ready", progress=1.0, result=result)
+        push.notify_job(
+            job_id,
+            title="Análisis listo",
+            body=f"Se detectaron {len(highlights)} momentos con potencial viral. Vuelve a la app para elegir.",
+            url=f"/shorts?job={job_id}",
+        )
     except Exception as e:
         storage.update_job(
             db, job_id, status="error", error=f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}"
         )
+        push.notify_job(job_id, title="El análisis falló", body="Toca para ver el detalle.", url="/shorts")
 
 
 # ---------------------------------------------------------------------------
@@ -271,11 +278,19 @@ def run_generate(job_id: str) -> None:
             db, job_id, status="done", stage="done", progress=1.0,
             result={"shorts": outputs, "style": style, "voice": voice, "voice_mode": voice_mode},
         )
+        n = len(outputs)
+        push.notify_job(
+            job_id,
+            title=f"{n} Reel{'s' if n != 1 else ''} listo{'s' if n != 1 else ''} para descargar",
+            body="Toca para abrir y descargar.",
+            url=f"/shorts?job={job_id}",
+        )
     except Exception as e:
         storage.update_job(
             db, job_id, status="error",
             error=f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}",
         )
+        push.notify_job(job_id, title="La generación falló", body="Toca para ver el detalle.", url="/shorts")
 
 
 def _build_bg(style: str, source: Path, start: float, duration: float, out_mp4: Path, loop: str | None) -> None:
@@ -396,11 +411,18 @@ def run_quick_clip(job_id: str) -> None:
             "voice_mode": voice_mode,
         }
         storage.update_job(db, job_id, status="done", stage="done", progress=1.0, result=result)
+        push.notify_job(
+            job_id,
+            title="Tu Reel está listo",
+            body=(hook or "Toca para abrir y descargar."),
+            url=f"/shorts?job={job_id}",
+        )
     except Exception as e:
         storage.update_job(
             db, job_id, status="error",
             error=f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}",
         )
+        push.notify_job(job_id, title="El recorte falló", body="Toca para ver el detalle.", url="/shorts")
 
 
 def _extract_words(segments: list[dict], start: float, end: float) -> list[dict]:

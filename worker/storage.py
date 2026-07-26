@@ -25,6 +25,22 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_ip_date ON jobs(client_ip, created_at);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    subscription_json TEXT NOT NULL,   -- JSON completo con endpoint + keys
+    client_ip TEXT,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS job_subscriptions (
+    job_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    PRIMARY KEY (job_id, endpoint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_subs_job ON job_subscriptions(job_id);
 """
 
 
@@ -101,6 +117,54 @@ def count_jobs_by_ip_last_24h(db_path: str, ip: str) -> int:
             (ip, cutoff),
         ).fetchone()
     return int(row["n"] or 0)
+
+
+def save_push_subscription(db_path: str, endpoint: str, sub_json: str, client_ip: str, job_id: str | None = None) -> None:
+    now = int(time.time())
+    with _conn(db_path) as db:
+        db.execute(
+            "INSERT INTO push_subscriptions (endpoint, subscription_json, client_ip, created_at, last_seen_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(endpoint) DO UPDATE SET subscription_json = excluded.subscription_json, "
+            "last_seen_at = excluded.last_seen_at, client_ip = excluded.client_ip",
+            (endpoint, sub_json, client_ip, now, now),
+        )
+        if job_id:
+            db.execute(
+                "INSERT OR IGNORE INTO job_subscriptions (job_id, endpoint) VALUES (?, ?)",
+                (job_id, endpoint),
+            )
+
+
+def get_subscriptions_for_job(db_path: str, job_id: str) -> list[str]:
+    """Devuelve subscription_json de todas las subs asociadas al job (o el mismo IP)."""
+    with _conn(db_path) as db:
+        # Subs asociadas explícitamente al job
+        rows = db.execute(
+            "SELECT ps.subscription_json FROM push_subscriptions ps "
+            "JOIN job_subscriptions js ON js.endpoint = ps.endpoint "
+            "WHERE js.job_id = ?",
+            (job_id,),
+        ).fetchall()
+        subs = [r["subscription_json"] for r in rows]
+        if subs:
+            return subs
+        # Fallback: subs del mismo IP (por si el frontend no asoció)
+        job_row = db.execute("SELECT client_ip FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if not job_row or not job_row["client_ip"]:
+            return []
+        ip_rows = db.execute(
+            "SELECT subscription_json FROM push_subscriptions "
+            "WHERE client_ip = ? AND last_seen_at > ?",
+            (job_row["client_ip"], int(time.time()) - 30 * 24 * 3600),
+        ).fetchall()
+        return [r["subscription_json"] for r in ip_rows]
+
+
+def delete_push_subscription(db_path: str, endpoint: str) -> None:
+    with _conn(db_path) as db:
+        db.execute("DELETE FROM job_subscriptions WHERE endpoint = ?", (endpoint,))
+        db.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
 
 
 def mark_orphaned_running_jobs(db_path: str) -> int:

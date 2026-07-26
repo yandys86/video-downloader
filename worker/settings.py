@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # Ej: "tuvideodown.com" — se dibuja con drawtext de ffmpeg.
     watermark_text: str = ""
 
+    # Web Push (VAPID) para notificaciones cuando un job completa.
+    # Vacío = notificaciones desactivadas (el frontend seguirá funcionando).
+    # Genera con: python -c "from py_vapid import Vapid; v=Vapid(); v.generate_keys(); print(v.private_pem().decode())"
+    vapid_private_key: str = ""
+    vapid_public_key_b64url: str = ""
+    vapid_subject: str = "mailto:admin@example.com"
+
     host: str = "0.0.0.0"
     port: int = 8000
 

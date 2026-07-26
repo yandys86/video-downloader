@@ -33,6 +33,12 @@ export const metadata: Metadata = {
   alternates: {
     canonical: SITE_URL
   },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "TuVideoDown"
+  },
   openGraph: {
     type: "website",
     url: SITE_URL,

@@ -122,6 +122,38 @@ def healthz() -> dict:
     return {"ok": True}
 
 
+@app.get("/push/public_key")
+def push_public_key() -> dict:
+    """Frontend lo pide para crear la subscripción Web Push."""
+    return {"public_key": settings.vapid_public_key_b64url}
+
+
+class PushSubscribeRequest(BaseModel):
+    subscription: dict
+    job_id: str | None = None
+    client_ip: str = ""
+
+
+@app.post("/push/subscribe", dependencies=[Depends(require_secret)])
+def push_subscribe(req: PushSubscribeRequest, request: Request) -> dict:
+    """Guarda la subscription Web Push del navegador y opcionalmente la
+    asocia a un job_id concreto para que reciba notificación cuando termine.
+    """
+    import json as _json
+    endpoint = req.subscription.get("endpoint")
+    if not endpoint:
+        raise HTTPException(400, "subscription.endpoint requerido")
+    ip = req.client_ip or (request.client.host if request.client else "")
+    storage.save_push_subscription(
+        settings.db_path,
+        endpoint=endpoint,
+        sub_json=_json.dumps(req.subscription),
+        client_ip=ip,
+        job_id=req.job_id,
+    )
+    return {"ok": True}
+
+
 @app.post("/analyze", response_model=JobRef, dependencies=[Depends(require_secret)])
 def analyze(req: AnalyzeRequest, request: Request) -> JobRef:
     ip = req.client_ip or (request.client.host if request.client else "")

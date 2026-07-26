@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isPushSupported, needsPWAInstallOnIOS, subscribeToPushForJob } from "@/lib/push";
 
 type Highlight = { start: number; end: number; hook: string; reason: string };
 type AnalyzeJob = {
@@ -228,6 +229,7 @@ export default function ShortsGenerator() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar el recorte");
       saveJobToHistory({ id: data.job_id, kind: "generate", url: url.trim(), ts: Date.now() });
+      subscribeToPushForJob(data.job_id).catch(() => {});
       pollJob("generate", data.job_id);
     } catch (e: any) {
       setError(e.message);
@@ -254,6 +256,8 @@ export default function ShortsGenerator() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar el análisis");
       saveJobToHistory({ id: data.job_id, kind: "analyze", url: url.trim(), ts: Date.now() });
+      // Suscribir a Web Push para este job (background notification)
+      subscribeToPushForJob(data.job_id).catch(() => {});
       pollJob("analyze", data.job_id);
     } catch (e: any) {
       setError(e.message);
@@ -295,6 +299,7 @@ export default function ShortsGenerator() {
       saveJobToHistory({
         id: data.job_id, kind: "generate", parent_id: analyzeJob.id, ts: Date.now(),
       });
+      subscribeToPushForJob(data.job_id).catch(() => {});
       pollJob("generate", data.job_id);
     } catch (e: any) {
       setError(e.message);
@@ -405,9 +410,24 @@ export default function ShortsGenerator() {
   const currentStage = (analyzeJob?.stage || generateJob?.stage || "").split("/")[0];
 
   const idleOrError = step === "idle" || step === "error";
+  const [showIOSHint, setShowIOSHint] = useState(false);
+  useEffect(() => {
+    // Detectar tras montar (needsPWAInstallOnIOS accede a window)
+    setShowIOSHint(isPushSupported() === false && needsPWAInstallOnIOS());
+  }, []);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+      {showIOSHint && (
+        <div className="mb-4 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-4 py-3 text-sm text-fuchsia-100">
+          <div className="font-medium">📲 Para recibir notificaciones en iPhone</div>
+          <div className="mt-1 text-xs text-fuchsia-200/80">
+            Toca <strong>Compartir</strong> abajo (⎋) → <strong>Añadir a pantalla de inicio</strong>.
+            Después abre la app desde el ícono y te avisará cuando el Reel esté listo aunque cierres la pantalla.
+          </div>
+        </div>
+      )}
+
       {/* Mode toggle */}
       {idleOrError && (
         <div className="mb-4 flex gap-1.5 rounded-lg bg-white/[0.03] p-1">
