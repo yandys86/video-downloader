@@ -493,7 +493,7 @@ export default function ShortsGenerator() {
               <input
                 value={manualStart}
                 onChange={(e) => setManualStart(e.target.value)}
-                placeholder="mm:ss  ·  45:30"
+                placeholder="1:57:22 ó 45:30"
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
               />
             </div>
@@ -504,13 +504,15 @@ export default function ShortsGenerator() {
               <input
                 value={manualEnd}
                 onChange={(e) => setManualEnd(e.target.value)}
-                placeholder="mm:ss  ·  46:30"
+                placeholder="1:58:00 ó 46:30"
                 className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
               />
             </div>
           </div>
           <p className="-mt-2 text-xs text-white/40">
-            Si pones <em>Fin</em>, se usa ese rango exacto. Si lo dejas vacío, se usa la duración de abajo.
+            Acepta <code className="text-white/60">hh:mm:ss</code> (ej. <code className="text-white/60">1:57:22</code>),
+            <code className="text-white/60"> mm:ss</code> o segundos crudos. Si pones <em>Fin</em>, se usa ese rango
+            exacto; si no, la duración de abajo.
           </p>
 
           <div>
