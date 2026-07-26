@@ -29,6 +29,7 @@ type GenerateJob = {
 };
 
 type Step = "idle" | "analyzing" | "picking" | "generating" | "done" | "error";
+type Mode = "ai" | "manual";
 
 const STYLES = [
   { id: "original", label: "Original", desc: "Recorte 9:16 del vídeo" },
@@ -144,6 +145,8 @@ function saveJobToHistory(job: StoredJob) {
 }
 
 export default function ShortsGenerator() {
+  const [mode, setMode] = useState<Mode>("ai");
+  const [manualStart, setManualStart] = useState<string>("");
   const [url, setUrl] = useState("");
   const [step, setStep] = useState<Step>("idle");
   const [analyzeJob, setAnalyzeJob] = useState<AnalyzeJob | null>(null);
@@ -176,6 +179,39 @@ export default function ShortsGenerator() {
     if (pollTimer.current) {
       clearInterval(pollTimer.current);
       pollTimer.current = null;
+    }
+  }
+
+  async function submitQuickClip() {
+    setError(null);
+    const startSec = parseTime(manualStart);
+    if (!url.trim() || startSec === null || !clipDuration) {
+      setError("Rellena URL, inicio (mm:ss) y elige duración.");
+      return;
+    }
+    ensureNotificationPermission();
+    setStep("generating");
+    setGenerateJob(null);
+    try {
+      const res = await fetch("/api/shorts/quick_clip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: url.trim(),
+          start: startSec,
+          duration: clipDuration,
+          style,
+          voice_mode: voiceMode,
+          voice,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo iniciar el recorte");
+      saveJobToHistory({ id: data.job_id, kind: "generate", url: url.trim(), ts: Date.now() });
+      pollJob("generate", data.job_id);
+    } catch (e: any) {
+      setError(e.message);
+      setStep("error");
     }
   }
 
@@ -346,26 +382,126 @@ export default function ShortsGenerator() {
   };
   const currentStage = (analyzeJob?.stage || generateJob?.stage || "").split("/")[0];
 
+  const idleOrError = step === "idle" || step === "error";
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+      {/* Mode toggle */}
+      {idleOrError && (
+        <div className="mb-4 flex gap-1.5 rounded-lg bg-white/[0.03] p-1">
+          <button
+            onClick={() => setMode("ai")}
+            className={`flex-1 rounded-md py-2 text-sm font-medium transition ${
+              mode === "ai"
+                ? "bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow"
+                : "text-white/60 hover:text-white"
+            }`}
+          >
+            🤖 Análisis IA
+          </button>
+          <button
+            onClick={() => setMode("manual")}
+            className={`flex-1 rounded-md py-2 text-sm font-medium transition ${
+              mode === "manual"
+                ? "bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white shadow"
+                : "text-white/60 hover:text-white"
+            }`}
+          >
+            ✂️ Recorte manual
+          </button>
+        </div>
+      )}
+      {idleOrError && (
+        <p className="mb-3 text-xs text-white/50">
+          {mode === "ai"
+            ? "Claude detecta los mejores momentos del vídeo (para podcasts, entrevistas, tutoriales)."
+            : "Elige tú el minuto exacto — perfecto para películas y series de 2h+. No descarga el vídeo entero, solo el trozo que quieres."}
+        </p>
+      )}
+
       {/* Paso 1: URL input */}
       <div className="flex flex-col sm:flex-row gap-2">
         <input
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          disabled={step !== "idle" && step !== "error"}
+          disabled={!idleOrError}
           placeholder="https://youtube.com/watch?v=..."
           className="flex-1 rounded-lg border border-white/10 bg-black/30 px-4 py-3 text-white placeholder-white/40 outline-none focus:border-violet-400"
         />
-        <button
-          onClick={submitAnalyze}
-          disabled={!url.trim() || (step !== "idle" && step !== "error")}
-          className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-50"
-        >
-          Analizar vídeo
-        </button>
+        {mode === "ai" && (
+          <button
+            onClick={submitAnalyze}
+            disabled={!url.trim() || !idleOrError}
+            className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-50"
+          >
+            Analizar vídeo
+          </button>
+        )}
       </div>
+
+      {/* Panel de recorte manual: inputs + controles */}
+      {mode === "manual" && idleOrError && (
+        <div className="mt-4 space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-white">
+              ⏱️ Inicio del clip
+            </label>
+            <input
+              value={manualStart}
+              onChange={(e) => setManualStart(e.target.value)}
+              placeholder="mm:ss  ·  ej. 45:30 o 1:23:45"
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+            />
+            <p className="mt-1 text-xs text-white/40">
+              El minuto exacto donde quieres empezar el Reel dentro del vídeo original
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="text-sm font-medium text-white">Duración del Reel</span>
+              <span className="text-xs text-white/40">
+                {clipDuration ? `${clipDuration}s` : "elige"}
+              </span>
+            </div>
+            <PillGroup
+              options={DURATIONS.filter((d) => d.value !== null).map((d) => ({ id: String(d.value), label: d.label }))}
+              value={String(clipDuration ?? 30)}
+              onChange={(v) => setClipDuration(Number(v))}
+            />
+          </div>
+
+          <div>
+            <div className="mb-2 text-sm font-medium text-white">🎬 Estilo</div>
+            <PillGroup
+              options={STYLES.map((s) => ({ id: s.id, label: s.label }))}
+              value={style}
+              onChange={setStyle}
+            />
+          </div>
+
+          <div>
+            <div className="mb-2 text-sm font-medium text-white">🎙️ Voz</div>
+            <PillGroup
+              options={[
+                { id: "original", label: "Original del vídeo" },
+                { id: "ai", label: "Voz IA" },
+              ]}
+              value={voiceMode}
+              onChange={setVoiceMode}
+            />
+          </div>
+
+          <button
+            onClick={submitQuickClip}
+            disabled={!url.trim() || !manualStart.trim() || !idleOrError}
+            className="w-full rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-50"
+          >
+            Cortar y generar Reel
+          </button>
+        </div>
+      )}
 
       {/* Historial: si hay jobs recientes en localStorage, ofrecer reanudar */}
       {step === "idle" && history.length > 0 && (

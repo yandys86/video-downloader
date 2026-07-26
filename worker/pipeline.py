@@ -42,6 +42,41 @@ def download_source(url: str, out_dir: Path, job_id: str) -> Path:
     raise RuntimeError("yt-dlp no produjo archivo")
 
 
+def download_section(
+    url: str,
+    start: float,
+    duration: float,
+    out_dir: Path,
+    job_id: str,
+) -> Path:
+    """Descarga SOLO un tramo del vídeo con yt-dlp --download-sections.
+
+    100x más rápido que bajar el vídeo entero para películas/series:
+    para un clip de 30s dentro de una peli de 2h, baja ~15-30MB en vez
+    de varios GB. Usa `--force-keyframes-at-cuts` para cortes precisos.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_template = str(out_dir / f"{job_id}.%(ext)s")
+    end = start + duration
+    section_spec = f"*{start}-{end}"
+    cmd = [
+        "yt-dlp",
+        "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+        "--merge-output-format", "mp4",
+        "--no-playlist",
+        "--download-sections", section_spec,
+        "--force-keyframes-at-cuts",   # cortes exactos en los timestamps
+        "-o", out_template,
+        url,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    for ext in ("mp4", "mkv", "webm", "m4a"):
+        p = out_dir / f"{job_id}.{ext}"
+        if p.exists():
+            return p
+    raise RuntimeError("yt-dlp no produjo archivo (section)")
+
+
 # ---------------------------------------------------------------------------
 # 2. Duración con ffprobe
 # ---------------------------------------------------------------------------

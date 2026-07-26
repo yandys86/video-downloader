@@ -81,6 +81,21 @@ class GenerateRequest(BaseModel):
     client_ip: str = ""
 
 
+class QuickClipRequest(BaseModel):
+    """Recorte manual: baja SOLO un tramo del vídeo y genera un Short.
+    Ideal para películas/series largas donde ya sabes qué momento quieres.
+    """
+    url: str = Field(..., min_length=8, max_length=2048)
+    start: float = Field(..., ge=0)          # segundos desde el inicio del vídeo original
+    duration: float = Field(..., gt=1, le=180)  # duración del clip en segundos
+    style: str = Field("blur", pattern=r"^(original|blur|loop|gradient)$")
+    voice_mode: str = Field("original", pattern=r"^(ai|original)$")
+    voice: str | None = None
+    rate: str | None = None
+    hook: str = ""
+    client_ip: str = ""
+
+
 class JobRef(BaseModel):
     job_id: str
 
@@ -123,6 +138,21 @@ def generate(req: GenerateRequest, request: Request) -> JobRef:
     return JobRef(job_id=job_id)
 
 
+@app.post("/quick_clip", response_model=JobRef, dependencies=[Depends(require_secret)])
+def quick_clip(req: QuickClipRequest, request: Request) -> JobRef:
+    ip = req.client_ip or (request.client.host if request.client else "")
+    if storage.count_jobs_by_ip_last_24h(settings.db_path, ip) >= 3:
+        raise HTTPException(429, "Has alcanzado el límite diario de Shorts (3/día).")
+    job_id = storage.new_job(
+        settings.db_path,
+        "quick_clip",
+        req.model_dump(exclude_none=True, exclude={"client_ip"}),
+        client_ip=ip,
+    )
+    tasks.submit(tasks.run_quick_clip, job_id)
+    return JobRef(job_id=job_id)
+
+
 @app.get("/jobs/{job_id}", dependencies=[Depends(require_secret)])
 def get_job(job_id: str) -> dict:
     job = storage.get_job(settings.db_path, job_id)
@@ -135,7 +165,7 @@ def get_job(job_id: str) -> dict:
 @app.get("/download/{job_id}/{idx}", dependencies=[Depends(require_secret)])
 def download(job_id: str, idx: int) -> FileResponse:
     job = storage.get_job(settings.db_path, job_id)
-    if not job or job["status"] != "done" or job["kind"] != "generate":
+    if not job or job["status"] != "done" or job["kind"] not in ("generate", "quick_clip"):
         raise HTTPException(404, "short no disponible")
     shorts = (job.get("result") or {}).get("shorts") or []
     match = next((s for s in shorts if s["index"] == idx), None)

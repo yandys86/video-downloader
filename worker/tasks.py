@@ -302,6 +302,107 @@ def _extract_text(segments: list[dict], start: float, end: float) -> str:
     return " ".join(parts).strip()
 
 
+# ---------------------------------------------------------------------------
+# Quick clip: modo "recorte manual" — sin analyze previo. Baja SOLO el tramo
+# del vídeo pedido (para películas/series de 2h+) y genera el Short directo.
+# ---------------------------------------------------------------------------
+def run_quick_clip(job_id: str) -> None:
+    db = settings.db_path
+    job = storage.get_job(db, job_id)
+    if job is None:
+        return
+    inp = job["input"]
+    url: str = inp["url"]
+    start: float = float(inp["start"])
+    duration: float = float(inp["duration"])
+    style: str = inp.get("style", "blur")
+    voice_mode: str = inp.get("voice_mode", "original")
+    voice: str = inp.get("voice") or settings.default_tts_voice
+    rate: str = inp.get("rate") or settings.default_tts_rate
+    hook: str = inp.get("hook") or "Clip manual"
+
+    workdir = _work_dir(job_id)
+    workdir.mkdir(parents=True, exist_ok=True)
+    outdir = _output_dir()
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # 1) Descarga SOLO el tramo pedido (rápido, aunque el vídeo original dure 2h)
+        storage.update_job(db, job_id, status="running", stage="download_section", progress=0.10)
+        source = pipeline.download_section(url, start, duration, _sources_dir(), job_id)
+
+        # 2) Extraer audio del slice (para transcripción)
+        storage.update_job(db, job_id, stage="extract_audio", progress=0.30)
+        audio = workdir / "clip.mp3"
+        pipeline.extract_audio(source, audio)
+
+        # 3) Transcribir (Groq si disponible, Whisper local fallback)
+        storage.update_job(db, job_id, stage="transcribe", progress=0.45)
+        transcript = None
+        if transcribe_cloud.is_available():
+            transcript = transcribe_cloud.transcribe_with_groq(audio)
+        if transcript is None:
+            transcript = pipeline.transcribe(audio)
+
+        # 4) Captions .ass (words offset ya está a 0 porque el audio es solo el slice)
+        storage.update_job(db, job_id, stage="captions", progress=0.60)
+        words = [w for seg in transcript["segments"] for w in seg.get("words", [])]
+        ass_path = workdir / "clip.ass"
+        build_ass(words, str(ass_path))
+        script_text = " ".join(s.get("text", "").strip() for s in transcript["segments"])
+
+        # 5) Preparar audio del Short según voice_mode
+        if voice_mode == "ai":
+            # Reescribe con Claude + edge-tts
+            script = llm.rewrite_as_short_script(script_text) if script_text else script_text
+            voice_mp3 = workdir / "voice.mp3"
+            pipeline.synthesize_tts(script, voice, rate, voice_mp3)
+            audio_for_short = voice_mp3
+            audio_dur = pipeline.probe_duration(voice_mp3)
+            # Re-transcribir el TTS para captions sincronizadas
+            tts_transcript = pipeline.transcribe(voice_mp3)
+            words = [w for seg in tts_transcript["segments"] for w in seg.get("words", [])]
+            build_ass(words, str(ass_path))
+        else:
+            audio_for_short = audio  # original
+            audio_dur = pipeline.probe_duration(audio)
+
+        # 6) Fondo visual
+        storage.update_job(db, job_id, stage="background", progress=0.75)
+        bg_mp4 = workdir / "bg.mp4"
+        # start=0 porque el source ya empieza en el punto que queríamos
+        _build_bg(style, source, 0.0, audio_dur, bg_mp4, None)
+
+        # 7) Composición final
+        storage.update_job(db, job_id, stage="compose", progress=0.90)
+        out_mp4 = outdir / f"{job_id}-clip.mp4"
+        pipeline.compose_final(
+            bg_mp4, audio_for_short, ass_path, out_mp4,
+            watermark_text=settings.watermark_text,
+        )
+
+        result = {
+            "shorts": [{
+                "index": 0,
+                "tag": "quick",
+                "file": str(out_mp4),
+                "duration": audio_dur,
+                "hook": hook,
+                "script": script_text[:500] if script_text else "",
+                "voice_mode": voice_mode,
+            }],
+            "style": style,
+            "voice": voice,
+            "voice_mode": voice_mode,
+        }
+        storage.update_job(db, job_id, status="done", stage="done", progress=1.0, result=result)
+    except Exception as e:
+        storage.update_job(
+            db, job_id, status="error",
+            error=f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}",
+        )
+
+
 def _extract_words(segments: list[dict], start: float, end: float) -> list[dict]:
     """Devuelve las palabras del transcript que caen en [start, end] con
     timestamps desplazados a 0 (el clip empieza en 0, no en start absoluto).
