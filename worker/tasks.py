@@ -140,10 +140,10 @@ def run_generate(job_id: str) -> None:
         return
 
     inp = job["input"]
-    highlight_indices: list[int] = inp["highlight_indices"]
+    highlight_indices: list[int] = inp.get("highlight_indices") or []
+    custom_ranges: list[dict] = inp.get("custom_ranges") or []
     style: str = inp["style"]                 # 'original' | 'blur' | 'loop' | 'gradient'
     # voice_mode: 'ai' (edge-tts + reescribe) o 'original' (audio del vídeo).
-    # Compat hacia atrás: si no se especifica, 'ai'.
     voice_mode: str = inp.get("voice_mode", "ai")
     voice: str = inp.get("voice") or settings.default_tts_voice
     rate: str = inp.get("rate") or settings.default_tts_rate
@@ -158,42 +158,56 @@ def run_generate(job_id: str) -> None:
     outdir = _output_dir()
     outdir.mkdir(parents=True, exist_ok=True)
 
+    # Lista unificada de {start, end, hook, tag} — auto highlights + custom.
+    render_list: list[dict] = []
+    for idx in highlight_indices:
+        if 0 <= idx < len(all_highlights):
+            h = all_highlights[idx]
+            render_list.append({
+                "start": float(h["start"]),
+                "end": float(h["end"]),
+                "hook": h.get("hook", ""),
+                "tag": f"auto-{idx}",
+            })
+    for i, cr in enumerate(custom_ranges):
+        start = float(cr["start"])
+        end = float(cr["end"])
+        if end > start:
+            render_list.append({
+                "start": start,
+                "end": end,
+                "hook": cr.get("hook") or f"Personalizado {i + 1}",
+                "tag": f"custom-{i}",
+            })
+
     outputs: list[dict] = []
-    total = len(highlight_indices)
+    total = len(render_list)
 
     try:
         storage.update_job(db, job_id, status="running", stage="starting", progress=0.02)
 
-        for i, idx in enumerate(highlight_indices):
-            if idx < 0 or idx >= len(all_highlights):
-                continue
-            h = all_highlights[idx]
+        for i, r in enumerate(render_list):
             n = i + 1
             base_progress = 0.05 + (i / max(total, 1)) * 0.90
             audio_mp3 = workdir / f"short-{n}-voice.mp3"
             ass_path = workdir / f"short-{n}.ass"
             script_text = ""
+            start = r["start"]
+            end = r["end"]
 
             if voice_mode == "original":
-                # Modo rápido: audio real del vídeo + palabras del transcript
-                # inicial (offset a 0 del clip). Sin TTS, sin re-transcribir.
                 storage.update_job(db, job_id, stage=f"short-{n}/audio-slice", progress=base_progress + 0.10)
-                clip_dur = float(h["end"]) - float(h["start"])
-                pipeline.extract_audio_slice(source, float(h["start"]), clip_dur, audio_mp3)
+                clip_dur = end - start
+                pipeline.extract_audio_slice(source, start, clip_dur, audio_mp3)
                 audio_dur = pipeline.probe_duration(audio_mp3)
 
                 storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
-                words = _extract_words(transcript_segments, float(h["start"]), float(h["end"]))
-                if not words:
-                    # Sin palabras en ese tramo, fallback a captions vacías
-                    # (el video tendrá audio pero sin captions).
-                    words = []
+                words = _extract_words(transcript_segments, start, end)
                 build_ass(words, str(ass_path))
-                script_text = _extract_text(transcript_segments, float(h["start"]), float(h["end"]))
+                script_text = _extract_text(transcript_segments, start, end)
             else:
-                # Modo 'ai': reescribe + TTS + re-transcribe
                 storage.update_job(db, job_id, stage=f"short-{n}/script", progress=base_progress)
-                excerpt = _extract_text(transcript_segments, float(h["start"]), float(h["end"]))
+                excerpt = _extract_text(transcript_segments, start, end)
                 script_text = llm.rewrite_as_short_script(excerpt) if rewrite else excerpt
 
                 storage.update_job(db, job_id, stage=f"short-{n}/tts", progress=base_progress + 0.10)
@@ -207,17 +221,21 @@ def run_generate(job_id: str) -> None:
 
             storage.update_job(db, job_id, stage=f"short-{n}/background", progress=base_progress + 0.50)
             bg_mp4 = workdir / f"short-{n}-bg.mp4"
-            _build_bg(style, source, float(h["start"]), audio_dur, bg_mp4, loop_video_path)
+            _build_bg(style, source, start, audio_dur, bg_mp4, loop_video_path)
 
             storage.update_job(db, job_id, stage=f"short-{n}/compose", progress=base_progress + 0.75)
             out_mp4 = outdir / f"{job_id}-short-{n}.mp4"
-            pipeline.compose_final(bg_mp4, audio_mp3, ass_path, out_mp4)
+            pipeline.compose_final(
+                bg_mp4, audio_mp3, ass_path, out_mp4,
+                watermark_text=settings.watermark_text,
+            )
 
             outputs.append({
-                "index": idx,
+                "index": i,   # posición en render_list (n-1)
+                "tag": r["tag"],
                 "file": str(out_mp4),
                 "duration": audio_dur,
-                "hook": h.get("hook", ""),
+                "hook": r["hook"],
                 "script": script_text,
                 "voice_mode": voice_mode,
             })

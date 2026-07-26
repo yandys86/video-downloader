@@ -35,6 +35,10 @@ class Settings(BaseSettings):
 
     pexels_api_key: str = ""
 
+    # Watermark opcional en la esquina de cada Short. Vacío = sin watermark.
+    # Ej: "tuvideodown.com" — se dibuja con drawtext de ffmpeg.
+    watermark_text: str = ""
+
     host: str = "0.0.0.0"
     port: int = 8000
 

@@ -84,19 +84,95 @@ function fmtStart(s: number): string {
   return h ? `${h}:${m}:${sec}` : `${m}:${sec}`;
 }
 
+// Acepta "mm:ss", "hh:mm:ss", o "123" (segundos crudos). Devuelve null si inválido.
+function parseTime(s: string): number | null {
+  const trimmed = s.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(":");
+  if (parts.length === 1) {
+    const n = parseFloat(parts[0]);
+    return isFinite(n) && n >= 0 ? n : null;
+  }
+  if (parts.length === 2) {
+    const [m, sec] = parts.map(Number);
+    return isFinite(m) && isFinite(sec) ? m * 60 + sec : null;
+  }
+  if (parts.length === 3) {
+    const [h, m, sec] = parts.map(Number);
+    return isFinite(h) && isFinite(m) && isFinite(sec) ? h * 3600 + m * 60 + sec : null;
+  }
+  return null;
+}
+
+// Notificación de escritorio/móvil cuando el usuario NO está mirando la pestaña.
+function notifyIfBackground(title: string, body: string) {
+  if (typeof window === "undefined" || typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  if (document.visibilityState === "visible") return;
+  try {
+    new Notification(title, { body, icon: "/icon.svg" });
+  } catch {}
+}
+
+// LocalStorage: guardar los últimos jobs para poder reanudar tras cerrar la pestaña.
+type StoredJob = {
+  id: string;
+  kind: "analyze" | "generate";
+  url?: string;
+  parent_id?: string;
+  ts: number;
+  status?: string;
+};
+
+function loadHistory(): StoredJob[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem("shorts:history");
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as StoredJob[];
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    return arr.filter((j) => j && j.ts >= cutoff);
+  } catch {
+    return [];
+  }
+}
+
+function saveJobToHistory(job: StoredJob) {
+  if (typeof window === "undefined") return;
+  const list = loadHistory().filter((j) => j.id !== job.id);
+  list.unshift(job);
+  try {
+    localStorage.setItem("shorts:history", JSON.stringify(list.slice(0, 20)));
+  } catch {}
+}
+
 export default function ShortsGenerator() {
   const [url, setUrl] = useState("");
   const [step, setStep] = useState<Step>("idle");
   const [analyzeJob, setAnalyzeJob] = useState<AnalyzeJob | null>(null);
   const [generateJob, setGenerateJob] = useState<GenerateJob | null>(null);
   const [selectedHighlights, setSelectedHighlights] = useState<Set<number>>(new Set());
+  const [customRanges, setCustomRanges] = useState<Array<{ start: string; end: string; hook: string }>>([]);
   const [style, setStyle] = useState<string>("blur");
   const [voiceMode, setVoiceMode] = useState<string>("original");
   const [voice, setVoice] = useState<string>(VOICES[0].id);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<StoredJob[]>([]);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => () => clearPoll(), []);
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
+
+  // Pedir permiso de notificación en cuanto haya un job en marcha
+  // (algunos navegadores requieren gesture — el click en Analizar ya lo es).
+  function ensureNotificationPermission() {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }
 
   function clearPoll() {
     if (pollTimer.current) {
@@ -108,10 +184,12 @@ export default function ShortsGenerator() {
   async function submitAnalyze() {
     setError(null);
     if (!url.trim()) return;
+    ensureNotificationPermission();
     setStep("analyzing");
     setAnalyzeJob(null);
     setGenerateJob(null);
     setSelectedHighlights(new Set());
+    setCustomRanges([]);
 
     try {
       const res = await fetch("/api/shorts/analyze", {
@@ -121,6 +199,7 @@ export default function ShortsGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar el análisis");
+      saveJobToHistory({ id: data.job_id, kind: "analyze", url: url.trim(), ts: Date.now() });
       pollJob("analyze", data.job_id);
     } catch (e: any) {
       setError(e.message);
@@ -129,7 +208,20 @@ export default function ShortsGenerator() {
   }
 
   async function submitGenerate() {
-    if (!analyzeJob?.result || selectedHighlights.size === 0) return;
+    if (!analyzeJob?.result) return;
+    // Parsea rangos custom válidos.
+    const validCustom = customRanges
+      .map((r) => ({ start: parseTime(r.start), end: parseTime(r.end), hook: r.hook || "" }))
+      .filter((r): r is { start: number; end: number; hook: string } => (
+        r.start !== null && r.end !== null && r.end > r.start
+      ));
+    if (selectedHighlights.size === 0 && validCustom.length === 0) return;
+    if (customRanges.length > validCustom.length) {
+      setError("Alguno de los rangos personalizados es inválido. Usa mm:ss (ej. 1:30 → 2:15).");
+      return;
+    }
+
+    ensureNotificationPermission();
     setError(null);
     setStep("generating");
     try {
@@ -139,6 +231,7 @@ export default function ShortsGenerator() {
         body: JSON.stringify({
           parent_id: analyzeJob.id,
           highlight_indices: [...selectedHighlights].sort((a, b) => a - b),
+          custom_ranges: validCustom,
           style,
           voice_mode: voiceMode,
           voice,
@@ -146,6 +239,9 @@ export default function ShortsGenerator() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar la generación");
+      saveJobToHistory({
+        id: data.job_id, kind: "generate", parent_id: analyzeJob.id, ts: Date.now(),
+      });
       pollJob("generate", data.job_id);
     } catch (e: any) {
       setError(e.message);
@@ -178,8 +274,19 @@ export default function ShortsGenerator() {
 
         if (job.status === "done") {
           clearPoll();
-          if (kind === "analyze") setStep("picking");
-          else setStep("done");
+          if (kind === "analyze") {
+            setStep("picking");
+            notifyIfBackground(
+              "Análisis listo",
+              `Se detectaron ${job.result?.highlights?.length || 0} momentos virales. Vuelve a la pestaña para elegir.`,
+            );
+          } else {
+            setStep("done");
+            notifyIfBackground(
+              "Shorts listos",
+              `${job.result?.shorts?.length || 0} Short(s) generados y listos para descargar.`,
+            );
+          }
         } else if (job.status === "error") {
           clearPoll();
           setError(job.error || "Error desconocido");
@@ -213,7 +320,22 @@ export default function ShortsGenerator() {
     setAnalyzeJob(null);
     setGenerateJob(null);
     setSelectedHighlights(new Set());
+    setCustomRanges([]);
     setError(null);
+    setHistory(loadHistory());
+  }
+
+  // Reanudar un job de un intento anterior (viene del historial en localStorage).
+  function resumeJob(jobId: string, kind: "analyze" | "generate") {
+    setError(null);
+    if (kind === "analyze") {
+      setStep("analyzing");
+      setAnalyzeJob({ id: jobId, status: "running" });
+    } else {
+      setStep("generating");
+      setGenerateJob({ id: jobId, status: "running" });
+    }
+    pollJob(kind, jobId);
   }
 
   const stageLabel: Record<string, string> = {
@@ -248,6 +370,33 @@ export default function ShortsGenerator() {
         </button>
       </div>
 
+      {/* Historial: si hay jobs recientes en localStorage, ofrecer reanudar */}
+      {step === "idle" && history.length > 0 && (
+        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
+          <div className="text-xs font-medium text-white/70 mb-2">Trabajos recientes</div>
+          <ul className="space-y-1.5">
+            {history.slice(0, 5).map((h) => (
+              <li key={h.id} className="flex items-center justify-between text-xs">
+                <span className="truncate text-white/60">
+                  <span className="text-white/80">{h.kind === "analyze" ? "Análisis" : "Generación"}</span>
+                  {" · "}
+                  {h.url ? new URL(h.url).hostname : "job"}{" "}
+                  <span className="text-white/40">
+                    {new Date(h.ts).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </span>
+                <button
+                  onClick={() => resumeJob(h.id, h.kind)}
+                  className="ml-2 shrink-0 rounded bg-violet-500/20 px-2 py-0.5 text-violet-200 hover:bg-violet-500/30"
+                >
+                  Reanudar
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {step === "error" && (
         <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           <div className="font-medium">Algo falló</div>
@@ -278,6 +427,9 @@ export default function ShortsGenerator() {
             <p className="text-sm text-white/60">
               Duración del vídeo: {fmtDuration(analyzeJob.result.duration)} · idioma detectado:{" "}
               {analyzeJob.result.language.toUpperCase()}
+            </p>
+            <p className="text-xs text-fuchsia-300/80 mt-1">
+              ✓ Puedes marcar <strong>varios a la vez</strong> — se generarán todos.
             </p>
           </div>
           <ul className="space-y-2">
@@ -316,6 +468,57 @@ export default function ShortsGenerator() {
             })}
           </ul>
 
+          {/* Rangos personalizados */}
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <div className="text-sm font-medium text-white">Rango personalizado</div>
+                <div className="text-xs text-white/50">
+                  ¿Quieres un momento distinto? Añade start y end en formato <code className="text-white/70">mm:ss</code>.
+                </div>
+              </div>
+              <button
+                onClick={() => setCustomRanges((p) => [...p, { start: "", end: "", hook: "" }])}
+                className="rounded bg-fuchsia-500/20 px-3 py-1 text-xs text-fuchsia-200 hover:bg-fuchsia-500/30"
+              >
+                + Añadir
+              </button>
+            </div>
+            {customRanges.length > 0 && (
+              <ul className="mt-2 space-y-2">
+                {customRanges.map((r, i) => (
+                  <li key={i} className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                    <input
+                      value={r.start}
+                      onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, start: e.target.value } : x))}
+                      placeholder="Inicio (ej. 1:30)"
+                      className="w-full sm:w-32 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+                    />
+                    <span className="hidden sm:inline text-white/40">→</span>
+                    <input
+                      value={r.end}
+                      onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, end: e.target.value } : x))}
+                      placeholder="Fin (ej. 2:15)"
+                      className="w-full sm:w-32 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+                    />
+                    <input
+                      value={r.hook}
+                      onChange={(e) => setCustomRanges((p) => p.map((x, j) => j === i ? { ...x, hook: e.target.value } : x))}
+                      placeholder="Título opcional"
+                      className="flex-1 rounded border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+                    />
+                    <button
+                      onClick={() => setCustomRanges((p) => p.filter((_, j) => j !== i))}
+                      className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30"
+                    >
+                      Quitar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <StyleAndVoicePicker
             style={style}
             setStyle={setStyle}
@@ -325,13 +528,24 @@ export default function ShortsGenerator() {
             setVoice={setVoice}
           />
 
-          <button
-            onClick={submitGenerate}
-            disabled={selectedHighlights.size === 0}
-            className="w-full rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-40"
-          >
-            Generar {selectedHighlights.size || ""} Short{selectedHighlights.size === 1 ? "" : "s"}
-          </button>
+          {(() => {
+            const validCustomCount = customRanges.filter((r) => {
+              const s = parseTime(r.start), e = parseTime(r.end);
+              return s !== null && e !== null && e > s;
+            }).length;
+            const totalCount = selectedHighlights.size + validCustomCount;
+            return (
+              <button
+                onClick={submitGenerate}
+                disabled={totalCount === 0}
+                className="w-full rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 px-5 py-3 font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-40"
+              >
+                {totalCount === 0
+                  ? "Selecciona al menos 1 momento o añade un rango"
+                  : `Generar ${totalCount} Short${totalCount === 1 ? "" : "s"}`}
+              </button>
+            );
+          })()}
         </div>
       )}
 

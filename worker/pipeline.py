@@ -257,17 +257,30 @@ def compose_final(
     captions_ass: Path,
     out_mp4: Path,
     music_mp3: Path | None = None,
+    watermark_text: str = "",
 ) -> None:
     out_mp4.parent.mkdir(parents=True, exist_ok=True)
     # Escapamos la ruta del .ass para ffmpeg (filtro `ass=` es exquisito con paths).
     ass_escaped = str(captions_ass).replace(":", "\\:").replace("'", "\\'")
+
+    # Cadena de filtros de vídeo: captions + (opcional) watermark.
+    vf_filters = [f"ass='{ass_escaped}'"]
+    if watermark_text.strip():
+        # Escapamos comillas y ':' para drawtext (que también parsea :).
+        wm = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+        vf_filters.append(
+            f"drawtext=text='{wm}':fontcolor=white@0.75:fontsize=38:"
+            f"borderw=2:bordercolor=black@0.7:"
+            f"x=w-tw-24:y=h-th-32"
+        )
+    vf = ",".join(vf_filters)
 
     if music_mp3 is None:
         cmd = [
             "ffmpeg", "-y",
             "-i", str(bg_mp4),
             "-i", str(voice_mp3),
-            "-vf", f"ass='{ass_escaped}'",
+            "-vf", vf,
             "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-shortest", "-movflags", "+faststart",
@@ -283,7 +296,7 @@ def compose_final(
             "[2:a]volume=0.12,aloop=loop=-1:size=2e+09[m];"
             "[1:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]",
             "-map", "0:v", "-map", "[a]",
-            "-vf", f"ass='{ass_escaped}'",
+            "-vf", vf,
             "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-shortest", "-movflags", "+faststart",

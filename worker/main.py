@@ -54,9 +54,17 @@ class AnalyzeRequest(BaseModel):
     client_ip: str = ""
 
 
+class CustomRange(BaseModel):
+    start: float = Field(..., ge=0)
+    end: float = Field(..., gt=0)
+    hook: str = ""
+
+
 class GenerateRequest(BaseModel):
     parent_id: str
-    highlight_indices: list[int] = Field(..., min_length=1, max_length=10)
+    # Al menos uno de highlight_indices o custom_ranges debe tener elementos.
+    highlight_indices: list[int] = Field(default_factory=list, max_length=10)
+    custom_ranges: list[CustomRange] = Field(default_factory=list, max_length=10)
     style: str = Field(..., pattern=r"^(original|blur|loop|gradient)$")
     # 'ai' = edge-tts + guion reescrito. 'original' = audio real del vídeo
     # (más rápido, útil para clips virales tal-cual del vídeo original).
@@ -94,6 +102,8 @@ def generate(req: GenerateRequest, request: Request) -> JobRef:
     ip = req.client_ip or (request.client.host if request.client else "")
     if storage.count_jobs_by_ip_last_24h(settings.db_path, ip) >= 3:
         raise HTTPException(429, "Has alcanzado el límite diario de Shorts (3/día).")
+    if not req.highlight_indices and not req.custom_ranges:
+        raise HTTPException(400, "debes elegir al menos 1 highlight o rango personalizado")
     parent = storage.get_job(settings.db_path, req.parent_id)
     if not parent or parent["status"] != "done":
         raise HTTPException(400, "parent_id no existe o no está listo")
