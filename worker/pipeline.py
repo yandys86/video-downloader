@@ -51,36 +51,46 @@ def download_section(
 ) -> Path:
     """Descarga SOLO un tramo del vídeo con yt-dlp --download-sections.
 
-    100x más rápido que bajar el vídeo entero para películas/series:
-    para un clip de 30s dentro de una peli de 2h, baja ~15-30MB en vez
-    de varios GB. Corta al keyframe más cercano (imprecisión de 1-3s
-    aceptable; con `--force-keyframes-at-cuts` fallaba en subprocess).
+    Selector `best[height<=720]/best`: formato combinado (video+audio en
+    el mismo stream, sin DASH separado). Evita el 403 de googlevideo que
+    da a veces cuando pides bestvideo+bestaudio (los DASH separados
+    requieren firma JS y YouTube lo bloquea sin runtime). 720p es más
+    que suficiente para output 9:16.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(out_dir / f"{job_id}.%(ext)s")
     end = start + duration
     section_spec = f"*{start}-{end}"
-    cmd = [
-        "yt-dlp",
-        "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-        "--merge-output-format", "mp4",
-        "--no-playlist",
-        "--download-sections", section_spec,
-        "-o", out_template,
-        url,
+
+    # Intento 1: formato combinado simple (sin merge, sin DASH signatures)
+    formats_to_try = [
+        "best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best",
+        # Fallback: cualquier stream
+        "best",
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode != 0:
-        err_tail = (res.stderr or "").strip().splitlines()[-8:]
-        raise RuntimeError(
-            "yt-dlp download_section falló (exit "
-            f"{res.returncode}):\n" + "\n".join(err_tail)
-        )
-    for ext in ("mp4", "mkv", "webm", "m4a"):
-        p = out_dir / f"{job_id}.{ext}"
-        if p.exists():
-            return p
-    raise RuntimeError("yt-dlp no produjo archivo (section)")
+
+    last_err = ""
+    for fmt in formats_to_try:
+        cmd = [
+            "yt-dlp",
+            "-f", fmt,
+            "--no-playlist",
+            "--download-sections", section_spec,
+            "-o", out_template,
+            url,
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0:
+            for ext in ("mp4", "mkv", "webm", "m4a"):
+                p = out_dir / f"{job_id}.{ext}"
+                if p.exists():
+                    return p
+        last_err = (res.stderr or "").strip().splitlines()[-8:]
+
+    raise RuntimeError(
+        "yt-dlp download_section falló con todos los formatos:\n"
+        + "\n".join(last_err if isinstance(last_err, list) else [str(last_err)])
+    )
 
 
 # ---------------------------------------------------------------------------
