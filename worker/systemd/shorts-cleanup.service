@@ -1,0 +1,14 @@
+[Unit]
+Description=Shorts Worker — limpieza de basura acumulada
+After=shorts-worker.service
+
+[Service]
+Type=oneshot
+User=shorts
+Group=shorts
+WorkingDirectory=/opt/shorts-worker
+EnvironmentFile=/opt/shorts-worker/.env
+Environment=PATH=/opt/shorts-worker/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/shorts-worker/.venv/bin/python -m worker.cleanup
+StandardOutput=journal
+StandardError=journal

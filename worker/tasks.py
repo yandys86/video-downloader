@@ -1,6 +1,7 @@
 """Background tasks: analyze (transcribir + detectar highlights) y generate (renderizar Shorts)."""
 
 import logging
+import shutil
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -25,6 +26,13 @@ def _work_dir(job_id: str) -> Path:
 
 def _output_dir() -> Path:
     return Path(settings.workspace_dir) / "output"
+
+
+def _cleanup_workdir(job_id: str) -> None:
+    """Borra el workdir de un job (intermedios). El output final queda en output/."""
+    d = _work_dir(job_id)
+    if d.exists():
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def submit(fn, *args) -> None:
@@ -138,6 +146,9 @@ def run_analyze(job_id: str) -> None:
             body=f"Se detectaron {len(highlights)} momentos con potencial viral. Vuelve a la app para elegir.",
             url=f"/shorts?job={job_id}",
         )
+        # Analyze deja el audio extraído y (a veces) transcript en workdir.
+        # Ya no se necesitan; el source se conserva para generate posterior.
+        _cleanup_workdir(job_id)
     except Exception as e:
         storage.update_job(
             db, job_id, status="error", error=f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}"
@@ -285,6 +296,9 @@ def run_generate(job_id: str) -> None:
             body="Toca para abrir y descargar.",
             url=f"/shorts?job={job_id}",
         )
+        # Los intermedios (voice.mp3, .ass, bg.mp4) ya no se necesitan;
+        # el output final está en output/{job_id}-short-N.mp4
+        _cleanup_workdir(job_id)
     except Exception as e:
         storage.update_job(
             db, job_id, status="error",
@@ -417,6 +431,12 @@ def run_quick_clip(job_id: str) -> None:
             body=(hook or "Toca para abrir y descargar."),
             url=f"/shorts?job={job_id}",
         )
+        # Quick clip: intermedios + source del slice ya no se necesitan
+        _cleanup_workdir(job_id)
+        try:
+            source.unlink(missing_ok=True)
+        except Exception:
+            pass
     except Exception as e:
         storage.update_job(
             db, job_id, status="error",

@@ -1,0 +1,12 @@
+[Unit]
+Description=Ejecuta shorts-cleanup cada hora
+Requires=shorts-cleanup.service
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+# Persistent=true → si el CT estuvo apagado, ejecuta al arrancar
+Persistent=true
+
+[Install]
+WantedBy=timers.target
