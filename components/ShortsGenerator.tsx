@@ -147,6 +147,7 @@ function saveJobToHistory(job: StoredJob) {
 export default function ShortsGenerator() {
   const [mode, setMode] = useState<Mode>("ai");
   const [manualStart, setManualStart] = useState<string>("");
+  const [manualEnd, setManualEnd] = useState<string>("");
   const [url, setUrl] = useState("");
   const [step, setStep] = useState<Step>("idle");
   const [analyzeJob, setAnalyzeJob] = useState<AnalyzeJob | null>(null);
@@ -185,25 +186,44 @@ export default function ShortsGenerator() {
   async function submitQuickClip() {
     setError(null);
     const startSec = parseTime(manualStart);
-    if (!url.trim() || startSec === null || !clipDuration) {
-      setError("Rellena URL, inicio (mm:ss) y elige duración.");
+    const endSec = manualEnd.trim() ? parseTime(manualEnd) : null;
+    if (!url.trim() || startSec === null) {
+      setError("Rellena URL e inicio (mm:ss).");
       return;
     }
+    if (manualEnd.trim() && endSec === null) {
+      setError("Formato de 'fin' inválido. Usa mm:ss (ej. 47:30) o segundos.");
+      return;
+    }
+    if (endSec !== null && endSec <= startSec) {
+      setError("El 'fin' debe ser posterior al 'inicio'.");
+      return;
+    }
+    if (endSec === null && !clipDuration) {
+      setError("Elige una duración o especifica 'fin'.");
+      return;
+    }
+
     ensureNotificationPermission();
     setStep("generating");
     setGenerateJob(null);
     try {
+      const payload: Record<string, unknown> = {
+        url: url.trim(),
+        start: startSec,
+        style,
+        voice_mode: voiceMode,
+        voice,
+      };
+      if (endSec !== null) {
+        payload.end = endSec;  // el backend calculará la duración
+      } else {
+        payload.duration = clipDuration;
+      }
       const res = await fetch("/api/shorts/quick_clip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: url.trim(),
-          start: startSec,
-          duration: clipDuration,
-          style,
-          voice_mode: voiceMode,
-          voice,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar el recorte");
@@ -354,6 +374,8 @@ export default function ShortsGenerator() {
     setGenerateJob(null);
     setSelectedHighlights(new Set());
     setCustomRanges([]);
+    setManualStart("");
+    setManualEnd("");
     setError(null);
     setHistory(loadHistory());
   }
@@ -443,33 +465,51 @@ export default function ShortsGenerator() {
       {/* Panel de recorte manual: inputs + controles */}
       {mode === "manual" && idleOrError && (
         <div className="mt-4 space-y-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-white">
-              ⏱️ Inicio del clip
-            </label>
-            <input
-              value={manualStart}
-              onChange={(e) => setManualStart(e.target.value)}
-              placeholder="mm:ss  ·  ej. 45:30 o 1:23:45"
-              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
-            />
-            <p className="mt-1 text-xs text-white/40">
-              El minuto exacto donde quieres empezar el Reel dentro del vídeo original
-            </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-white">
+                ⏱️ Inicio
+              </label>
+              <input
+                value={manualStart}
+                onChange={(e) => setManualStart(e.target.value)}
+                placeholder="mm:ss  ·  45:30"
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-white">
+                🏁 Fin <span className="text-xs font-normal text-white/40">(opcional)</span>
+              </label>
+              <input
+                value={manualEnd}
+                onChange={(e) => setManualEnd(e.target.value)}
+                placeholder="mm:ss  ·  46:30"
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-white placeholder-white/30 outline-none focus:border-fuchsia-400"
+              />
+            </div>
           </div>
+          <p className="-mt-2 text-xs text-white/40">
+            Si pones <em>Fin</em>, se usa ese rango exacto. Si lo dejas vacío, se usa la duración de abajo.
+          </p>
 
           <div>
             <div className="mb-2 flex items-baseline justify-between">
-              <span className="text-sm font-medium text-white">Duración del Reel</span>
+              <span className="text-sm font-medium text-white">
+                Duración del Reel
+                {manualEnd.trim() && <span className="ml-2 text-xs text-white/40">(ignorada — usarás Inicio → Fin)</span>}
+              </span>
               <span className="text-xs text-white/40">
                 {clipDuration ? `${clipDuration}s` : "elige"}
               </span>
             </div>
-            <PillGroup
-              options={DURATIONS.filter((d) => d.value !== null).map((d) => ({ id: String(d.value), label: d.label }))}
-              value={String(clipDuration ?? 30)}
-              onChange={(v) => setClipDuration(Number(v))}
-            />
+            <div className={manualEnd.trim() ? "opacity-40 pointer-events-none" : ""}>
+              <PillGroup
+                options={DURATIONS.filter((d) => d.value !== null).map((d) => ({ id: String(d.value), label: d.label }))}
+                value={String(clipDuration ?? 30)}
+                onChange={(v) => setClipDuration(Number(v))}
+              />
+            </div>
           </div>
 
           <div>

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     max_input_duration_seconds: int = 3600
     max_highlights_per_job: int = 5
     max_concurrent_jobs: int = 2
+    # Máximo de Shorts (generate + quick_clip) por IP y día. 0 = desactivar
+    # el rate limit (útil para desarrollo/testing). En producción con tráfico
+    # público, subir a 3-5 para evitar abuso.
+    max_shorts_per_ip_per_day: int = 1000
 
     # `base` (74M params) es 2-3x más rápido que `small` (244M) en CPU.
     # Para detectar highlights la calidad de base es suficiente porque

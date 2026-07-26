@@ -49,6 +49,19 @@ def require_secret(x_worker_secret: Annotated[str | None, Header()] = None) -> N
         raise HTTPException(status_code=401, detail="invalid worker secret")
 
 
+def _check_daily_limit(ip: str) -> None:
+    """Rate limit configurable por env var. 0 = desactivado."""
+    limit = settings.max_shorts_per_ip_per_day
+    if limit <= 0:
+        return
+    used = storage.count_jobs_by_ip_last_24h(settings.db_path, ip)
+    if used >= limit:
+        raise HTTPException(
+            429,
+            f"Has alcanzado el límite diario de Shorts ({limit}/día).",
+        )
+
+
 class AnalyzeRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=2048)
     client_ip: str = ""
@@ -84,10 +97,14 @@ class GenerateRequest(BaseModel):
 class QuickClipRequest(BaseModel):
     """Recorte manual: baja SOLO un tramo del vídeo y genera un Short.
     Ideal para películas/series largas donde ya sabes qué momento quieres.
+
+    Se puede especificar el rango como `start + duration` O como `start + end`.
+    Si viene `end`, tiene prioridad sobre `duration`.
     """
     url: str = Field(..., min_length=8, max_length=2048)
-    start: float = Field(..., ge=0)          # segundos desde el inicio del vídeo original
-    duration: float = Field(..., gt=1, le=180)  # duración del clip en segundos
+    start: float = Field(..., ge=0)              # segundos desde el inicio del vídeo original
+    end: float | None = Field(None, gt=0)         # opcional; si se da, ignora duration
+    duration: float | None = Field(None, gt=1, le=300)   # fallback si no hay end
     style: str = Field("blur", pattern=r"^(original|blur|loop|gradient)$")
     voice_mode: str = Field("original", pattern=r"^(ai|original)$")
     voice: str | None = None
@@ -110,8 +127,7 @@ def analyze(req: AnalyzeRequest, request: Request) -> JobRef:
     ip = req.client_ip or (request.client.host if request.client else "")
     # Rate limit: si el mismo IP tiene demasiados 'generate' recientes, bloquea
     # también el analyze (evita malgastar CPU en transcripciones sin propósito).
-    if storage.count_jobs_by_ip_last_24h(settings.db_path, ip) >= 3:
-        raise HTTPException(429, "Has alcanzado el límite diario de Shorts (3/día).")
+    _check_daily_limit(ip)
     job_id = storage.new_job(settings.db_path, "analyze", {"url": req.url}, client_ip=ip)
     tasks.submit(tasks.run_analyze, job_id)
     return JobRef(job_id=job_id)
@@ -120,8 +136,7 @@ def analyze(req: AnalyzeRequest, request: Request) -> JobRef:
 @app.post("/generate", response_model=JobRef, dependencies=[Depends(require_secret)])
 def generate(req: GenerateRequest, request: Request) -> JobRef:
     ip = req.client_ip or (request.client.host if request.client else "")
-    if storage.count_jobs_by_ip_last_24h(settings.db_path, ip) >= 3:
-        raise HTTPException(429, "Has alcanzado el límite diario de Shorts (3/día).")
+    _check_daily_limit(ip)
     if not req.highlight_indices and not req.custom_ranges:
         raise HTTPException(400, "debes elegir al menos 1 highlight o rango personalizado")
     parent = storage.get_job(settings.db_path, req.parent_id)
@@ -141,12 +156,25 @@ def generate(req: GenerateRequest, request: Request) -> JobRef:
 @app.post("/quick_clip", response_model=JobRef, dependencies=[Depends(require_secret)])
 def quick_clip(req: QuickClipRequest, request: Request) -> JobRef:
     ip = req.client_ip or (request.client.host if request.client else "")
-    if storage.count_jobs_by_ip_last_24h(settings.db_path, ip) >= 3:
-        raise HTTPException(429, "Has alcanzado el límite diario de Shorts (3/día).")
+    _check_daily_limit(ip)
+    # Determinar duración final: prioridad end > duration > default 30s
+    if req.end is not None:
+        if req.end <= req.start:
+            raise HTTPException(400, "'end' debe ser mayor que 'start'")
+        duration = req.end - req.start
+    elif req.duration is not None:
+        duration = req.duration
+    else:
+        raise HTTPException(400, "Debes especificar 'end' o 'duration'")
+    if duration > 300:
+        raise HTTPException(400, "Duración máxima del clip: 300 segundos (5 min)")
+
+    payload = req.model_dump(exclude_none=True, exclude={"client_ip", "end", "duration"})
+    payload["duration"] = duration  # normalizamos a 'duration' para tasks.py
     job_id = storage.new_job(
         settings.db_path,
         "quick_clip",
-        req.model_dump(exclude_none=True, exclude={"client_ip"}),
+        payload,
         client_ip=ip,
     )
     tasks.submit(tasks.run_quick_clip, job_id)
