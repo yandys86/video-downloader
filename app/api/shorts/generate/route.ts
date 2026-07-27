@@ -1,33 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callWorkerJson, getClientIp, WorkerError } from "@/lib/workerProxy";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { deductCredits, reelDurationToCredits } from "@/lib/credits";
+import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Rate limit configurable por env: SHORTS_MAX_PER_DAY (0 = desactivado).
-// El worker aplica su propio límite adicionalmente.
-const SHORTS_MAX_PER_DAY = Number(process.env.SHORTS_MAX_PER_DAY ?? 1000);
-
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  if (SHORTS_MAX_PER_DAY > 0) {
-    const rl = checkRateLimit(`generate:${ip}`, SHORTS_MAX_PER_DAY, 24 * 60 * 60 * 1000);
-    if (!rl.ok) {
-      return NextResponse.json(
-        { error: `Has alcanzado el límite diario de Shorts. Vuelve en ${Math.ceil(rl.retryAfter / 3600)}h.` },
-        { status: 429, headers: { "Retry-After": String(rl.retryAfter) } }
-      );
-    }
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: "Debes iniciar sesión para generar Reels." },
+      { status: 401 },
+    );
   }
   try {
     const body = await req.json();
+    // Cost = N Reels × créditos por Reel según clip_duration (o 30s si auto).
+    const durationPerReel = Number(body.clip_duration ?? 30);
+    const perReelCost = reelDurationToCredits(durationPerReel);
+    const nReels = Math.max(
+      1,
+      (body.highlight_indices?.length || 0) + (body.custom_ranges?.length || 0),
+    );
+    const totalCost = perReelCost * nReels;
+
+    const charge = await deductCredits(user.id, totalCost, "reel_generate");
+    if (!charge.ok) {
+      return NextResponse.json(
+        {
+          error: `Necesitas ${totalCost} créditos (${nReels} Reels × ${perReelCost}). Balance: ${charge.balance}.`,
+          creditsRequired: totalCost,
+          creditsAvailable: charge.balance,
+          buyUrl: "/pricing",
+        },
+        { status: 402 },
+      );
+    }
+
     const data = await callWorkerJson<{ job_id: string }>(
       "/generate",
       { method: "POST", body: JSON.stringify({ ...body, client_ip: ip }) },
       ip
     );
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, creditsCharged: totalCost });
   } catch (e) {
     const status = e instanceof WorkerError ? e.status : 500;
     return NextResponse.json({ error: (e as Error).message }, { status });

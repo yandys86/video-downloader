@@ -40,10 +40,18 @@ cd "$REPO_DIR"
 log "Pulling latest from git…"
 git pull --rebase
 
-# Si package-lock cambió, reinstalamos. Más rápido que `npm ci` siempre.
-if git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -q '^package-lock\.json$'; then
-  log "package-lock cambió → npm install"
+# Si package.json cambió o no hay node_modules, reinstalamos deps.
+if git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -qE '^(package\.json|package-lock\.json)$' \
+   || [[ ! -d node_modules ]]; then
+  log "deps cambiaron → npm install"
   npm install
+fi
+
+# Prisma: aplicar migraciones/schema (idempotente).
+if [[ -f prisma/schema.prisma ]]; then
+  log "Prisma: sincronizando schema con la DB…"
+  npx prisma db push --skip-generate --accept-data-loss=false || true
+  npx prisma generate
 fi
 
 log "Building Next.js…"

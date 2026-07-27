@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import AuthProvider from "@/components/AuthProvider";
+import UserBadge from "@/components/UserBadge";
 import { ADSENSE_CLIENT } from "@/lib/ads";
 import "./globals.css";
 
@@ -117,7 +119,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <meta name="google-adsense-account" content={ADSENSE_CLIENT} />
 
-        {children}
+        <AuthProvider>
+          <div className="fixed top-3 right-3 z-50 sm:top-4 sm:right-4">
+            <UserBadge />
+          </div>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
