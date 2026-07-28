@@ -44,6 +44,12 @@ export default function UserBadge() {
         <span className="text-white/50">créditos</span>
       </Link>
       <Link
+        href="/shorts"
+        className="hidden sm:inline rounded-full bg-white/[0.03] border border-white/15 px-3 py-1 text-white/70 hover:border-white/30 hover:text-white"
+      >
+        Reels
+      </Link>
+      <Link
         href="/pricing"
         className="hidden sm:inline rounded-full bg-white/[0.03] border border-white/15 px-3 py-1 text-white/70 hover:border-white/30 hover:text-white"
       >
