@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { callWorkerJson, getClientIp, WorkerError } from "@/lib/workerProxy";
 import { deductCredits, reelDurationToCredits } from "@/lib/credits";
 import { getSessionUser } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,9 +38,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { telegramChatId: true, emailNotifications: true, email: true },
+    });
+
     const data = await callWorkerJson<{ job_id: string }>(
       "/quick_clip",
-      { method: "POST", body: JSON.stringify({ ...body, client_ip: ip }) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...body,
+          client_ip: ip,
+          notify_telegram_chat_id: dbUser?.telegramChatId || undefined,
+          notify_email: dbUser?.emailNotifications ? dbUser.email : undefined,
+        }),
+      },
       ip
     );
     return NextResponse.json({ ...data, creditsCharged: cost });

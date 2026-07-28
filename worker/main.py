@@ -92,6 +92,11 @@ class GenerateRequest(BaseModel):
     loop_video_path: str | None = None
     rewrite: bool = True
     client_ip: str = ""
+    # Si el usuario tiene Telegram vinculado, el proxy Next.js pasa aquí su
+    # chat_id y el worker envía cada MP4 terminado al terminar el job.
+    notify_telegram_chat_id: str | None = None
+    # Email opt-in (User.emailNotifications=true). Vacío = no enviar.
+    notify_email: str | None = None
 
 
 class QuickClipRequest(BaseModel):
@@ -111,6 +116,8 @@ class QuickClipRequest(BaseModel):
     rate: str | None = None
     hook: str = ""
     client_ip: str = ""
+    notify_telegram_chat_id: str | None = None
+    notify_email: str | None = None
 
 
 class JobRef(BaseModel):

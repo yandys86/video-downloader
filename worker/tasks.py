@@ -6,7 +6,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import llm, pipeline, push, storage, transcribe_cloud, youtube_subs
+from . import email as em, llm, pipeline, push, storage, telegram as tg, transcribe_cloud, youtube_subs
 from .captions import build_ass
 from .settings import settings
 
@@ -296,6 +296,26 @@ def run_generate(job_id: str) -> None:
             body="Toca para abrir y descargar.",
             url=f"/shorts?job={job_id}",
         )
+        # Entrega Telegram (si el user tiene chat vinculado)
+        chat_id = inp.get("notify_telegram_chat_id")
+        if chat_id and tg.is_configured():
+            for out in outputs:
+                tg.notify_job_done(
+                    chat_id=str(chat_id),
+                    job_id=job_id,
+                    file_path=Path(out["file"]),
+                    label=out.get("hook") or "Tu Reel está listo",
+                )
+        # Entrega Email (si opt-in)
+        email_to = inp.get("notify_email")
+        if email_to and em.is_configured():
+            for out in outputs:
+                em.send_reel_ready(
+                    to=str(email_to),
+                    hook=out.get("hook") or "Tu Reel está listo",
+                    job_id=job_id,
+                    file_path=Path(out["file"]),
+                )
         # Los intermedios (voice.mp3, .ass, bg.mp4) ya no se necesitan;
         # el output final está en output/{job_id}-short-N.mp4
         _cleanup_workdir(job_id)
@@ -431,6 +451,22 @@ def run_quick_clip(job_id: str) -> None:
             body=(hook or "Toca para abrir y descargar."),
             url=f"/shorts?job={job_id}",
         )
+        chat_id = inp.get("notify_telegram_chat_id")
+        if chat_id and tg.is_configured():
+            tg.notify_job_done(
+                chat_id=str(chat_id),
+                job_id=job_id,
+                file_path=out_mp4,
+                label=hook or "Tu Reel está listo",
+            )
+        email_to = inp.get("notify_email")
+        if email_to and em.is_configured():
+            em.send_reel_ready(
+                to=str(email_to),
+                hook=hook or "Tu Reel está listo",
+                job_id=job_id,
+                file_path=out_mp4,
+            )
         # Quick clip: intermedios + source del slice ya no se necesitan
         _cleanup_workdir(job_id)
         try:

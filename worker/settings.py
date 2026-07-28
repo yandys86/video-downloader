@@ -57,6 +57,25 @@ class Settings(BaseSettings):
     vapid_public_key_b64url: str = ""
     vapid_subject: str = "mailto:admin@example.com"
 
+    # Email delivery vía Resend (opcional). Free tier: 100/día, 3000/mes.
+    # Get key: https://resend.com — el dominio de EMAIL_FROM debe estar verificado
+    # en Resend (o usar el sandbox onboarding@resend.dev para pruebas).
+    resend_api_key: str = ""
+    email_from: str = ""
+    # Adjuntar MP4 al email si pesa menos de este límite (bytes). Resend deja
+    # ~10 MB en total. Si excede, se envía solo el enlace de descarga.
+    email_max_attachment_bytes: int = 9 * 1024 * 1024
+    email_public_base_url: str = "https://tuvideodown.com"
+
+    # Telegram Bot (opcional) — envía el MP4 al usuario cuando termina el Reel.
+    # Vacío = feature desactivada. Crear un bot con @BotFather en Telegram.
+    telegram_bot_token: str = ""
+    # Límite duro de Telegram Bot API para sendVideo (~50 MiB). Si el archivo
+    # es mayor, mandamos un aviso con enlace al MP4 en lugar del vídeo.
+    telegram_max_video_bytes: int = 45 * 1024 * 1024
+    # Base URL pública para construir enlaces de descarga en el mensaje fallback.
+    telegram_public_base_url: str = "https://tuvideodown.com"
+
     host: str = "0.0.0.0"
     port: int = 8000
 

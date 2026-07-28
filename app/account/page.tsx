@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { fmtPrice } from "@/lib/pricing";
+import { isTelegramConfigured } from "@/lib/telegram";
+import { isEmailConfigured } from "@/lib/email";
+import TelegramConnect from "@/components/TelegramConnect";
+import EmailNotificationsToggle from "@/components/EmailNotificationsToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +22,15 @@ export default async function AccountPage({
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { email: true, name: true, credits: true, role: true, createdAt: true },
+    select: {
+      email: true,
+      name: true,
+      credits: true,
+      role: true,
+      createdAt: true,
+      telegramChatId: true,
+      emailNotifications: true,
+    },
   });
 
   const [ledger, purchases] = await Promise.all([
@@ -73,6 +85,26 @@ export default async function AccountPage({
           </div>
         </div>
       </div>
+
+      {(isTelegramConfigured() || isEmailConfigured()) && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-lg font-semibold text-white">Notificaciones</h2>
+          <div className="space-y-3">
+            {isEmailConfigured() && user?.email && (
+              <EmailNotificationsToggle
+                initial={user.emailNotifications ?? true}
+                email={user.email}
+              />
+            )}
+            {isTelegramConfigured() && (
+              <TelegramConnect
+                connected={!!user?.telegramChatId}
+                currentChatId={user?.telegramChatId}
+              />
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="mb-8">
         <h2 className="mb-3 text-lg font-semibold text-white">Últimos movimientos</h2>
