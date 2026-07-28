@@ -9,6 +9,8 @@ import { isTelegramConfigured } from "@/lib/telegram";
 import { isEmailConfigured } from "@/lib/email";
 import TelegramConnect from "@/components/TelegramConnect";
 import EmailNotificationsToggle from "@/components/EmailNotificationsToggle";
+import ProfileEditor from "@/components/ProfileEditor";
+import PaidRefresher from "@/components/PaidRefresher";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +30,23 @@ export default async function AccountPage({
       credits: true,
       role: true,
       createdAt: true,
+      passwordHash: true,
       telegramChatId: true,
       telegramNotifications: true,
       emailNotifications: true,
     },
   });
+
+  const accounts = await prisma.account.findMany({
+    where: { userId: session.user.id },
+    select: { provider: true },
+  });
+  const loginProviders = [
+    ...new Set([
+      ...accounts.map((a) => a.provider),
+      ...(user?.passwordHash ? ["credentials"] : []),
+    ]),
+  ];
 
   const [ledger, purchases] = await Promise.all([
     prisma.creditLedger.findMany({
@@ -50,10 +64,13 @@ export default async function AccountPage({
   return (
     <main className="mx-auto max-w-3xl px-4 py-12">
       {searchParams.paid && (
-        <div className="mb-6 rounded-lg border border-green-400/30 bg-green-500/10 px-4 py-3 text-sm text-green-100">
-          <div className="font-medium">✓ Pago recibido</div>
-          <div className="text-xs text-green-200/80">Los créditos se acreditan en 1-3 segundos. Refresca si aún no los ves.</div>
-        </div>
+        <>
+          <PaidRefresher />
+          <div className="mb-6 rounded-lg border border-green-400/30 bg-green-500/10 px-4 py-3 text-sm text-green-100">
+            <div className="font-medium">✓ Pago recibido</div>
+            <div className="text-xs text-green-200/80">Los créditos se acreditan en 1-3 segundos, refrescando…</div>
+          </div>
+        </>
       )}
 
       <header className="mb-8">
@@ -86,6 +103,16 @@ export default async function AccountPage({
           </div>
         </div>
       </div>
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold text-white">Perfil</h2>
+        <ProfileEditor
+          initialName={user?.name || ""}
+          email={user?.email || ""}
+          hasPassword={!!user?.passwordHash}
+          loginProviders={loginProviders}
+        />
+      </section>
 
       {(isTelegramConfigured() || isEmailConfigured()) && (
         <section className="mb-8">

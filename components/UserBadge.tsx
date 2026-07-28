@@ -1,11 +1,30 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 
 /** Barra fija arriba a la derecha con estado de sesión + créditos. */
 export default function UserBadge() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
+
+  // El JWT solo se refresca cuando explícitamente llamamos update(); si no,
+  // tras una compra Stripe el topbar seguiría mostrando el saldo viejo. Lo
+  // forzamos al montar y cada vez que la pestaña vuelve a foco.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    update();
+    const onVis = () => {
+      if (document.visibilityState === "visible") update();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   if (status === "loading") {
     return <div className="text-xs text-white/40">…</div>;
