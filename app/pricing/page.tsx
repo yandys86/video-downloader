@@ -5,6 +5,11 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { PACKS, fmtPrice } from "@/lib/pricing";
 import BuyButton from "./BuyButton";
+import PayPalCheckout from "@/components/PayPalCheckout";
+import CryptoButton from "@/components/CryptoButton";
+
+const paypalEnabled = !!process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+const cryptoEnabled = !!process.env.COINBASE_COMMERCE_API_KEY;
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +59,10 @@ export default async function PricingPage() {
               {fmtPrice(p.priceCents)}
             </div>
             {p.hint && <div className="mt-1 text-xs text-white/50">{p.hint}</div>}
-            <div className="mt-4">
+            <div className="mt-4 space-y-2">
               <BuyButton packId={p.id} disabled={!session} />
+              {paypalEnabled && <PayPalCheckout packId={p.id} disabled={!session} />}
+              {cryptoEnabled && <CryptoButton packId={p.id} disabled={!session} />}
             </div>
           </div>
         ))}
@@ -71,7 +78,8 @@ export default async function PricingPage() {
           <li>• Análisis del vídeo con IA (detectar highlights) → gratis</li>
         </ul>
         <p className="mt-3 text-white/50">
-          Métodos de pago: tarjeta (Stripe). PayPal y cripto próximamente.
+          Métodos de pago: tarjeta (Stripe){paypalEnabled ? ", PayPal" : ""}
+          {cryptoEnabled ? ", cripto (BTC/ETH/USDC)" : ""}.
         </p>
       </div>
     </main>
