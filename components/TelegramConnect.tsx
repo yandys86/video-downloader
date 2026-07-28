@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 type Props = {
   connected: boolean;
   currentChatId?: string | null;
+  notificationsEnabled?: boolean;
 };
 
-export default function TelegramConnect({ connected }: Props) {
+export default function TelegramConnect({ connected, notificationsEnabled = true }: Props) {
   const router = useRouter();
   const [state, setState] = useState<
     | { kind: "idle" }
@@ -16,6 +17,26 @@ export default function TelegramConnect({ connected }: Props) {
     | { kind: "code"; code: string; deepLink: string | null; expiresAt: string }
     | { kind: "error"; msg: string }
   >({ kind: "idle" });
+  const [notifOn, setNotifOn] = useState(notificationsEnabled);
+  const [notifSaving, setNotifSaving] = useState(false);
+
+  async function toggleNotif() {
+    const next = !notifOn;
+    setNotifSaving(true);
+    setNotifOn(next);
+    try {
+      const res = await fetch("/api/account/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegramNotifications: next }),
+      });
+      if (!res.ok) setNotifOn(!next);
+    } catch {
+      setNotifOn(!next);
+    } finally {
+      setNotifSaving(false);
+    }
+  }
 
   async function generate() {
     setState({ kind: "loading" });
@@ -42,16 +63,38 @@ export default function TelegramConnect({ connected }: Props) {
     return (
       <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4">
         <div className="flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <div className="font-medium text-emerald-100">📨 Telegram conectado</div>
-            <div className="text-xs text-emerald-200/70">Recibirás cada Reel terminado en tu chat con el bot.</div>
+            <div className="text-xs text-emerald-200/70">
+              {notifOn
+                ? "Recibirás cada Reel terminado en tu chat con el bot."
+                : "Vinculado pero avisos en pausa — actívalos aquí cuando quieras."}
+            </div>
           </div>
-          <button
-            onClick={unlink}
-            className="rounded bg-white/5 px-3 py-1.5 text-xs text-white/70 hover:bg-red-500/20 hover:text-red-200"
-          >
-            Desvincular
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={toggleNotif}
+              disabled={notifSaving}
+              role="switch"
+              aria-checked={notifOn}
+              title={notifOn ? "Pausar avisos" : "Activar avisos"}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                notifOn ? "bg-emerald-500" : "bg-white/20"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  notifOn ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+            <button
+              onClick={unlink}
+              className="rounded bg-white/5 px-3 py-1.5 text-xs text-white/70 hover:bg-red-500/20 hover:text-red-200"
+            >
+              Desvincular
+            </button>
+          </div>
         </div>
       </div>
     );

@@ -29,6 +29,7 @@ export default async function AccountPage({
       role: true,
       createdAt: true,
       telegramChatId: true,
+      telegramNotifications: true,
       emailNotifications: true,
     },
   });
@@ -100,6 +101,7 @@ export default async function AccountPage({
               <TelegramConnect
                 connected={!!user?.telegramChatId}
                 currentChatId={user?.telegramChatId}
+                notificationsEnabled={user?.telegramNotifications ?? true}
               />
             )}
           </div>

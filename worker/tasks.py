@@ -181,6 +181,7 @@ def run_generate(job_id: str) -> None:
     rate: str = inp.get("rate") or settings.default_tts_rate
     loop_video_path: str | None = inp.get("loop_video_path")
     rewrite: bool = inp.get("rewrite", True)
+    captions: bool = inp.get("captions", True)
 
     source = Path(parent["result"]["source_path"])
     all_highlights = parent["result"]["highlights"]
@@ -246,9 +247,10 @@ def run_generate(job_id: str) -> None:
                 pipeline.extract_audio_slice(source, start, clip_dur, audio_mp3)
                 audio_dur = pipeline.probe_duration(audio_mp3)
 
-                storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
-                words = _extract_words(transcript_segments, start, end)
-                build_ass(words, str(ass_path))
+                if captions:
+                    storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
+                    words = _extract_words(transcript_segments, start, end)
+                    build_ass(words, str(ass_path))
                 script_text = _extract_text(transcript_segments, start, end)
             else:
                 storage.update_job(db, job_id, stage=f"short-{n}/script", progress=base_progress)
@@ -259,10 +261,11 @@ def run_generate(job_id: str) -> None:
                 pipeline.synthesize_tts(script_text, voice, rate, audio_mp3)
                 audio_dur = pipeline.probe_duration(audio_mp3)
 
-                storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
-                tts_transcript = pipeline.transcribe(audio_mp3)
-                words = [w for seg in tts_transcript["segments"] for w in seg["words"]]
-                build_ass(words, str(ass_path))
+                if captions:
+                    storage.update_job(db, job_id, stage=f"short-{n}/captions", progress=base_progress + 0.30)
+                    tts_transcript = pipeline.transcribe(audio_mp3)
+                    words = [w for seg in tts_transcript["segments"] for w in seg["words"]]
+                    build_ass(words, str(ass_path))
 
             storage.update_job(db, job_id, stage=f"short-{n}/background", progress=base_progress + 0.50)
             bg_mp4 = workdir / f"short-{n}-bg.mp4"
@@ -271,7 +274,7 @@ def run_generate(job_id: str) -> None:
             storage.update_job(db, job_id, stage=f"short-{n}/compose", progress=base_progress + 0.75)
             out_mp4 = outdir / f"{job_id}-short-{n}.mp4"
             pipeline.compose_final(
-                bg_mp4, audio_mp3, ass_path, out_mp4,
+                bg_mp4, audio_mp3, ass_path if captions else None, out_mp4,
                 watermark_text=settings.watermark_text,
             )
 
@@ -369,6 +372,7 @@ def run_quick_clip(job_id: str) -> None:
     voice: str = inp.get("voice") or settings.default_tts_voice
     rate: str = inp.get("rate") or settings.default_tts_rate
     hook: str = inp.get("hook") or "Clip manual"
+    captions: bool = inp.get("captions", True)
 
     workdir = _work_dir(job_id)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -380,27 +384,32 @@ def run_quick_clip(job_id: str) -> None:
         storage.update_job(db, job_id, status="running", stage="download_section", progress=0.10)
         source = pipeline.download_section(url, start, duration, _sources_dir(), job_id)
 
-        # 2) Extraer audio del slice (para transcripción)
+        # 2) Extraer audio del slice (para transcripción / voz original)
         storage.update_job(db, job_id, stage="extract_audio", progress=0.30)
         audio = workdir / "clip.mp3"
         pipeline.extract_audio(source, audio)
 
-        # 3) Transcribir (Groq si disponible, Whisper local fallback)
-        storage.update_job(db, job_id, stage="transcribe", progress=0.45)
+        # 3) Transcribir SOLO si hace falta (captions on, o voice AI que reescribe)
+        script_text = ""
         transcript = None
-        if transcribe_cloud.is_available():
-            transcript = transcribe_cloud.transcribe_with_groq(audio)
-        if transcript is None:
-            transcript = pipeline.transcribe(audio)
+        need_transcript = captions or voice_mode == "ai"
+        if need_transcript:
+            storage.update_job(db, job_id, stage="transcribe", progress=0.45)
+            if transcribe_cloud.is_available():
+                transcript = transcribe_cloud.transcribe_with_groq(audio)
+            if transcript is None:
+                transcript = pipeline.transcribe(audio)
+            script_text = " ".join(s.get("text", "").strip() for s in transcript["segments"])
 
-        # 4) Captions .ass (words offset ya está a 0 porque el audio es solo el slice)
-        storage.update_job(db, job_id, stage="captions", progress=0.60)
-        words = [w for seg in transcript["segments"] for w in seg.get("words", [])]
-        ass_path = workdir / "clip.ass"
-        build_ass(words, str(ass_path))
-        script_text = " ".join(s.get("text", "").strip() for s in transcript["segments"])
+        ass_path: Path | None = None
+        if captions and transcript is not None:
+            # Captions .ass (offsets a 0 porque el audio es solo el slice)
+            storage.update_job(db, job_id, stage="captions", progress=0.60)
+            words = [w for seg in transcript["segments"] for w in seg.get("words", [])]
+            ass_path = workdir / "clip.ass"
+            build_ass(words, str(ass_path))
 
-        # 5) Preparar audio del Short según voice_mode
+        # 4) Preparar audio del Short según voice_mode
         if voice_mode == "ai":
             # Reescribe con Claude + edge-tts
             script = llm.rewrite_as_short_script(script_text) if script_text else script_text
@@ -408,10 +417,12 @@ def run_quick_clip(job_id: str) -> None:
             pipeline.synthesize_tts(script, voice, rate, voice_mp3)
             audio_for_short = voice_mp3
             audio_dur = pipeline.probe_duration(voice_mp3)
-            # Re-transcribir el TTS para captions sincronizadas
-            tts_transcript = pipeline.transcribe(voice_mp3)
-            words = [w for seg in tts_transcript["segments"] for w in seg.get("words", [])]
-            build_ass(words, str(ass_path))
+            if captions:
+                # Re-transcribir el TTS para captions sincronizadas
+                tts_transcript = pipeline.transcribe(voice_mp3)
+                words = [w for seg in tts_transcript["segments"] for w in seg.get("words", [])]
+                ass_path = workdir / "clip.ass"
+                build_ass(words, str(ass_path))
         else:
             audio_for_short = audio  # original
             audio_dur = pipeline.probe_duration(audio)
@@ -429,6 +440,7 @@ def run_quick_clip(job_id: str) -> None:
             bg_mp4, audio_for_short, ass_path, out_mp4,
             watermark_text=settings.watermark_text,
         )
+        # ass_path puede ser None si captions=False; compose_final ya lo maneja
 
         result = {
             "shorts": [{

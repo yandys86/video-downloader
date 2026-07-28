@@ -42,8 +42,16 @@ export async function POST(req: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
-      select: { telegramChatId: true, emailNotifications: true, email: true },
+      select: {
+        telegramChatId: true,
+        telegramNotifications: true,
+        emailNotifications: true,
+        email: true,
+      },
     });
+
+    const wantsTg = dbUser?.telegramChatId && dbUser.telegramNotifications;
+    const wantsEmail = dbUser?.emailNotifications && dbUser.email;
 
     const data = await callWorkerJson<{ job_id: string }>(
       "/generate",
@@ -52,8 +60,8 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           ...body,
           client_ip: ip,
-          notify_telegram_chat_id: dbUser?.telegramChatId || undefined,
-          notify_email: dbUser?.emailNotifications ? dbUser.email : undefined,
+          notify_telegram_chat_id: wantsTg ? dbUser.telegramChatId : undefined,
+          notify_email: wantsEmail ? dbUser.email : undefined,
         }),
       },
       ip

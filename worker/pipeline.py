@@ -305,17 +305,22 @@ def build_background_gradient(duration: float, out_mp4: Path) -> None:
 def compose_final(
     bg_mp4: Path,
     voice_mp3: Path,
-    captions_ass: Path,
+    captions_ass: Path | None,
     out_mp4: Path,
     music_mp3: Path | None = None,
     watermark_text: str = "",
 ) -> None:
     out_mp4.parent.mkdir(parents=True, exist_ok=True)
-    # Escapamos la ruta del .ass para ffmpeg (filtro `ass=` es exquisito con paths).
-    ass_escaped = str(captions_ass).replace(":", "\\:").replace("'", "\\'")
 
-    # Cadena de filtros de vídeo: captions + (opcional) watermark.
-    vf_filters = [f"ass='{ass_escaped}'"]
+    # Cadena de filtros de vídeo: captions (opcional) + watermark (opcional).
+    # captions_ass=None => Reel sin subtítulos (útil para música/karaoke, donde
+    # las auto-captions salen mal). Si no hay ningún filtro, ni siquiera pasamos
+    # -vf para que ffmpeg pueda copiar el vídeo tal cual (más rápido).
+    vf_filters: list[str] = []
+    if captions_ass is not None:
+        # Escapamos la ruta del .ass para ffmpeg (filtro `ass=` es exquisito con paths).
+        ass_escaped = str(captions_ass).replace(":", "\\:").replace("'", "\\'")
+        vf_filters.append(f"ass='{ass_escaped}'")
     if watermark_text.strip():
         # Escapamos comillas y ':' para drawtext (que también parsea :).
         wm = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
@@ -325,13 +330,14 @@ def compose_final(
             f"x=w-tw-24:y=h-th-32"
         )
     vf = ",".join(vf_filters)
+    vf_args = ["-vf", vf] if vf else []
 
     if music_mp3 is None:
         cmd = [
             "ffmpeg", "-y",
             "-i", str(bg_mp4),
             "-i", str(voice_mp3),
-            "-vf", vf,
+            *vf_args,
             "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-shortest", "-movflags", "+faststart",
@@ -347,7 +353,7 @@ def compose_final(
             "[2:a]volume=0.12,aloop=loop=-1:size=2e+09[m];"
             "[1:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]",
             "-map", "0:v", "-map", "[a]",
-            "-vf", vf,
+            *vf_args,
             "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-shortest", "-movflags", "+faststart",

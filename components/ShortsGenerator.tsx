@@ -159,6 +159,9 @@ export default function ShortsGenerator() {
   const [style, setStyle] = useState<string>("blur");
   const [voiceMode, setVoiceMode] = useState<string>("original");
   const [voice, setVoice] = useState<string>(VOICES[0].id);
+  // captions: activado por defecto. Desmarcar para música/karaoke donde las
+  // auto-captions salen mal.
+  const [captions, setCaptions] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<StoredJob[]>([]);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -215,6 +218,7 @@ export default function ShortsGenerator() {
         style,
         voice_mode: voiceMode,
         voice,
+        captions,
       };
       if (endSec !== null) {
         payload.end = endSec;  // el backend calculará la duración
@@ -292,6 +296,7 @@ export default function ShortsGenerator() {
           style,
           voice_mode: voiceMode,
           voice,
+          captions,
         }),
       });
       const data = await res.json();
@@ -555,6 +560,8 @@ export default function ShortsGenerator() {
             />
           </div>
 
+          <CaptionsToggle on={captions} onChange={setCaptions} />
+
           <button
             onClick={submitQuickClip}
             disabled={!url.trim() || !manualStart.trim() || !idleOrError}
@@ -777,6 +784,8 @@ export default function ShortsGenerator() {
                 </select>
               )}
             </div>
+
+            <CaptionsToggle on={captions} onChange={setCaptions} />
           </div>
 
           {(() => {
@@ -991,6 +1000,36 @@ function StyleAndVoicePicker({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CaptionsToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+      <label className="flex items-center justify-between gap-3 cursor-pointer">
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-white">💬 Subtítulos quemados</span>
+          <span className="block text-xs text-white/50">
+            Desactívalos para clips de música o karaoke (las auto-captions salen mal ahí).
+          </span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          onClick={() => onChange(!on)}
+          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+            on ? "bg-fuchsia-500" : "bg-white/20"
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              on ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </label>
     </div>
   );
 }

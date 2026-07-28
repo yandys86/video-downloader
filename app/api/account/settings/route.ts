@@ -21,9 +21,12 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const data: { emailNotifications?: boolean } = {};
+  const data: { emailNotifications?: boolean; telegramNotifications?: boolean } = {};
   if (typeof body.emailNotifications === "boolean") {
     data.emailNotifications = body.emailNotifications;
+  }
+  if (typeof body.telegramNotifications === "boolean") {
+    data.telegramNotifications = body.telegramNotifications;
   }
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
@@ -32,7 +35,7 @@ export async function PATCH(req: NextRequest) {
   const updated = await prisma.user.update({
     where: { id: user.id },
     data,
-    select: { emailNotifications: true },
+    select: { emailNotifications: true, telegramNotifications: true },
   });
   return NextResponse.json({ ok: true, ...updated });
 }

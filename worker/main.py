@@ -91,6 +91,9 @@ class GenerateRequest(BaseModel):
     rate: str | None = None
     loop_video_path: str | None = None
     rewrite: bool = True
+    # Quemar subtítulos en el vídeo. False = Reel sin captions (mejor para
+    # música / karaoke donde las auto-captions salen mal).
+    captions: bool = True
     client_ip: str = ""
     # Si el usuario tiene Telegram vinculado, el proxy Next.js pasa aquí su
     # chat_id y el worker envía cada MP4 terminado al terminar el job.
@@ -115,6 +118,7 @@ class QuickClipRequest(BaseModel):
     voice: str | None = None
     rate: str | None = None
     hook: str = ""
+    captions: bool = True
     client_ip: str = ""
     notify_telegram_chat_id: str | None = None
     notify_email: str | None = None
