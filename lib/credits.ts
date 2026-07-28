@@ -18,6 +18,7 @@ export type CreditReason =
   | "reel_analyze"
   | "reel_quick_clip"
   | "admin_grant"
+  | "admin_deduct"
   | "refund";
 
 /** Añade créditos al balance y registra en el ledger. */

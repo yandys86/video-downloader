@@ -94,6 +94,11 @@ class GenerateRequest(BaseModel):
     # Quemar subtítulos en el vídeo. False = Reel sin captions (mejor para
     # música / karaoke donde las auto-captions salen mal).
     captions: bool = True
+    # Watermark override desde el proxy Next.js. None = usar el default global
+    # (settings.watermark_text). String vacío = quitar el watermark.
+    watermark_text: str | None = None
+    # True = watermark se mueve por el frame (anti-piratería, premium).
+    watermark_anim: bool = False
     client_ip: str = ""
     # Si el usuario tiene Telegram vinculado, el proxy Next.js pasa aquí su
     # chat_id y el worker envía cada MP4 terminado al terminar el job.
@@ -119,6 +124,8 @@ class QuickClipRequest(BaseModel):
     rate: str | None = None
     hook: str = ""
     captions: bool = True
+    watermark_text: str | None = None
+    watermark_anim: bool = False
     client_ip: str = ""
     notify_telegram_chat_id: str | None = None
     notify_email: str | None = None

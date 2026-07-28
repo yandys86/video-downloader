@@ -47,9 +47,13 @@ export default function UserBadge() {
   return (
     <div className="flex items-center gap-2 text-sm">
       {u.role === "admin" && (
-        <span className="rounded-full bg-amber-500/20 border border-amber-400/40 px-2 py-0.5 text-xs text-amber-200">
+        <Link
+          href="/admin"
+          className="rounded-full bg-amber-500/20 border border-amber-400/40 px-2 py-0.5 text-xs text-amber-200 hover:bg-amber-500/30"
+          title="Panel admin"
+        >
           admin
-        </span>
+        </Link>
       )}
       <Link
         href="/account"

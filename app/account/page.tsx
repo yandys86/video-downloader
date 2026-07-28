@@ -11,6 +11,7 @@ import TelegramConnect from "@/components/TelegramConnect";
 import EmailNotificationsToggle from "@/components/EmailNotificationsToggle";
 import ProfileEditor from "@/components/ProfileEditor";
 import PaidRefresher from "@/components/PaidRefresher";
+import WatermarkEditor from "@/components/WatermarkEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,9 @@ export default async function AccountPage({
       role: true,
       createdAt: true,
       passwordHash: true,
+      isPremium: true,
+      watermarkText: true,
+      watermarkAnim: true,
       telegramChatId: true,
       telegramNotifications: true,
       emailNotifications: true,
@@ -113,6 +117,16 @@ export default async function AccountPage({
           loginProviders={loginProviders}
         />
       </section>
+
+      {user?.isPremium && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-lg font-semibold text-white">Marca de agua</h2>
+          <WatermarkEditor
+            initialText={user.watermarkText || ""}
+            initialAnim={user.watermarkAnim ?? false}
+          />
+        </section>
+      )}
 
       {(isTelegramConfigured() || isEmailConfigured()) && (
         <section className="mb-8">

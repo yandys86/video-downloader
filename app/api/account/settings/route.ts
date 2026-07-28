@@ -25,6 +25,8 @@ export async function PATCH(req: NextRequest) {
     emailNotifications?: boolean;
     telegramNotifications?: boolean;
     name?: string | null;
+    watermarkText?: string | null;
+    watermarkAnim?: boolean;
   } = {};
   if (typeof body.emailNotifications === "boolean") {
     data.emailNotifications = body.emailNotifications;
@@ -39,6 +41,27 @@ export async function PATCH(req: NextRequest) {
     }
     data.name = trimmed || null;
   }
+  // Watermark: solo premium puede tocarlo. Silenciosamente ignoramos si no.
+  if (typeof body.watermarkText === "string" || typeof body.watermarkAnim === "boolean") {
+    const u = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { isPremium: true },
+    });
+    if (u?.isPremium) {
+      if (typeof body.watermarkText === "string") {
+        const trimmed = body.watermarkText.trim();
+        if (trimmed.length > 40) {
+          return NextResponse.json({ error: "Watermark máx. 40 caracteres" }, { status: 400 });
+        }
+        data.watermarkText = trimmed || null;
+      }
+      if (typeof body.watermarkAnim === "boolean") {
+        data.watermarkAnim = body.watermarkAnim;
+      }
+    } else {
+      return NextResponse.json({ error: "watermark solo para usuarios premium" }, { status: 403 });
+    }
+  }
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
   }
@@ -46,7 +69,13 @@ export async function PATCH(req: NextRequest) {
   const updated = await prisma.user.update({
     where: { id: user.id },
     data,
-    select: { emailNotifications: true, telegramNotifications: true, name: true },
+    select: {
+      emailNotifications: true,
+      telegramNotifications: true,
+      name: true,
+      watermarkText: true,
+      watermarkAnim: true,
+    },
   });
   return NextResponse.json({ ok: true, ...updated });
 }

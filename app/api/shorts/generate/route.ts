@@ -47,11 +47,19 @@ export async function POST(req: NextRequest) {
         telegramNotifications: true,
         emailNotifications: true,
         email: true,
+        isPremium: true,
+        watermarkText: true,
+        watermarkAnim: true,
       },
     });
 
     const wantsTg = dbUser?.telegramChatId && dbUser.telegramNotifications;
     const wantsEmail = dbUser?.emailNotifications && dbUser.email;
+
+    // Watermark: los users no-premium NO pueden overrideal — siempre estático "tuvideodown.com".
+    // Los premium eligen su propio texto (vacío = sin watermark) y si va animado.
+    const wmText = dbUser?.isPremium ? dbUser.watermarkText ?? "" : undefined;
+    const wmAnim = dbUser?.isPremium ? !!dbUser.watermarkAnim : false;
 
     const data = await callWorkerJson<{ job_id: string }>(
       "/generate",
@@ -62,6 +70,8 @@ export async function POST(req: NextRequest) {
           client_ip: ip,
           notify_telegram_chat_id: wantsTg ? dbUser.telegramChatId : undefined,
           notify_email: wantsEmail ? dbUser.email : undefined,
+          watermark_text: wmText,
+          watermark_anim: wmAnim,
         }),
       },
       ip

@@ -10,3 +10,10 @@ export async function getSessionUser(): Promise<Session["user"] | null> {
   const session = await getServerSession(authOptions);
   return session?.user || null;
 }
+
+/** Como getSessionUser pero devuelve null si el user no es admin. */
+export async function getAdminUser(): Promise<Session["user"] | null> {
+  const u = await getSessionUser();
+  if (!u || u.role !== "admin") return null;
+  return u;
+}

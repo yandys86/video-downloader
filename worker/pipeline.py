@@ -309,6 +309,7 @@ def compose_final(
     out_mp4: Path,
     music_mp3: Path | None = None,
     watermark_text: str = "",
+    watermark_anim: bool = False,
 ) -> None:
     out_mp4.parent.mkdir(parents=True, exist_ok=True)
 
@@ -324,11 +325,25 @@ def compose_final(
     if watermark_text.strip():
         # Escapamos comillas y ':' para drawtext (que también parsea :).
         wm = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
-        vf_filters.append(
-            f"drawtext=text='{wm}':fontcolor=white@0.75:fontsize=38:"
-            f"borderw=2:bordercolor=black@0.7:"
-            f"x=w-tw-24:y=h-th-32"
-        )
+        if watermark_anim:
+            # Anti-piratería: el texto se mueve por todo el frame con Lissajous
+            # (senos con periodos diferentes en x/y). Amplitudes generosas para
+            # cubrir casi toda la superficie a ~1 vuelta cada ~14s.
+            #   x = (w-tw)/2 + (w-tw)/2 * sin(2*PI*t/14)
+            #   y = (h-th)/2 + (h-th)/2 * sin(2*PI*t/9 + PI/3)
+            x_expr = "(w-tw)/2 + (w-tw)/2*sin(2*PI*t/14)"
+            y_expr = "(h-th)/2 + (h-th)/2*sin(2*PI*t/9 + PI/3)"
+            vf_filters.append(
+                f"drawtext=text='{wm}':fontcolor=white@0.55:fontsize=42:"
+                f"borderw=2:bordercolor=black@0.6:"
+                f"x={x_expr}:y={y_expr}"
+            )
+        else:
+            vf_filters.append(
+                f"drawtext=text='{wm}':fontcolor=white@0.75:fontsize=38:"
+                f"borderw=2:bordercolor=black@0.7:"
+                f"x=w-tw-24:y=h-th-32"
+            )
     vf = ",".join(vf_filters)
     vf_args = ["-vf", vf] if vf else []
 

@@ -26,9 +26,13 @@ model User {
   role          String    @default("user")
   // Créditos actuales (denormalizado; verdad = suma de credit_ledger)
   credits       Int       @default(0)
-  // Config personal para Reels premium (Fase 3)
+  // Config personal para Reels premium (Fase 3). isPremium desbloquea:
+  //   - Watermark propio (texto libre, no forzado a tuvideodown.com)
+  //   - Watermark animado (se mueve por el reel, anti-piratería)
+  // Se activa desde el panel /admin.
+  isPremium     Boolean   @default(false)
   watermarkText String?
-  watermarkAnim Boolean   @default(false) // watermark en movimiento (anti-piratería)
+  watermarkAnim Boolean   @default(false)
   // Telegram bot integration (Fase 2)
   telegramChatId String?
   // Opt-in independientes por canal. Un user puede estar vinculado a Telegram

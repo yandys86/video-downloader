@@ -182,6 +182,10 @@ def run_generate(job_id: str) -> None:
     loop_video_path: str | None = inp.get("loop_video_path")
     rewrite: bool = inp.get("rewrite", True)
     captions: bool = inp.get("captions", True)
+    # Watermark: si el proxy no manda nada usamos el default global.
+    wm_text = inp.get("watermark_text")
+    watermark_text: str = wm_text if wm_text is not None else settings.watermark_text
+    watermark_anim: bool = bool(inp.get("watermark_anim", False))
 
     source = Path(parent["result"]["source_path"])
     all_highlights = parent["result"]["highlights"]
@@ -275,7 +279,8 @@ def run_generate(job_id: str) -> None:
             out_mp4 = outdir / f"{job_id}-short-{n}.mp4"
             pipeline.compose_final(
                 bg_mp4, audio_mp3, ass_path if captions else None, out_mp4,
-                watermark_text=settings.watermark_text,
+                watermark_text=watermark_text,
+                watermark_anim=watermark_anim,
             )
 
             outputs.append({
@@ -373,6 +378,9 @@ def run_quick_clip(job_id: str) -> None:
     rate: str = inp.get("rate") or settings.default_tts_rate
     hook: str = inp.get("hook") or "Clip manual"
     captions: bool = inp.get("captions", True)
+    wm_text = inp.get("watermark_text")
+    watermark_text: str = wm_text if wm_text is not None else settings.watermark_text
+    watermark_anim: bool = bool(inp.get("watermark_anim", False))
 
     workdir = _work_dir(job_id)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -438,7 +446,8 @@ def run_quick_clip(job_id: str) -> None:
         out_mp4 = outdir / f"{job_id}-clip.mp4"
         pipeline.compose_final(
             bg_mp4, audio_for_short, ass_path, out_mp4,
-            watermark_text=settings.watermark_text,
+            watermark_text=watermark_text,
+            watermark_anim=watermark_anim,
         )
         # ass_path puede ser None si captions=False; compose_final ya lo maneja
 
