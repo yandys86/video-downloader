@@ -21,28 +21,26 @@ export default function WatchInstructions() {
 
   const items: Record<OS, { title: string; steps: string[] }> = {
     ios: {
-      title: "📱 Cómo guardar en tu galería (iPhone)",
+      title: "📱 Cómo guardar en Fotos (iPhone)",
       steps: [
-        "Toca el botón ▶︎ para reproducir el vídeo",
-        "Mantén el dedo pulsado sobre el vídeo",
-        "En el menú, toca «Guardar en Fotos»",
-        "Alternativa: usa el botón compartir del player → «Guardar vídeo»",
+        "Toca «Guardar en galería» — se abre el menú compartir de iOS",
+        "En el menú, toca «Guardar vídeo»",
+        "El Reel aparecerá en tu app Fotos en unos segundos",
+        "Alternativa: mantén pulsado sobre el vídeo del player → «Guardar en Fotos»",
       ],
     },
     android: {
-      title: "📱 Cómo guardar en tu galería (Android)",
+      title: "📱 Cómo guardar en Galería (Android)",
       steps: [
-        "Toca «Descargar como fichero» arriba",
-        "El vídeo se guarda en la carpeta Descargas",
-        "En tu app Galería, verás Descargas como álbum",
-        "O usa el botón compartir del player → Guardar en Fotos",
+        "Toca «Guardar en galería» — se abre el menú compartir",
+        "Elige «Fotos», «Galería» o «Guardar vídeo»",
+        "Si tu navegador no soporta compartir, usa «Descargar como fichero» — el Reel aparecerá en el álbum Descargas de tu galería",
       ],
     },
     other: {
       title: "💻 Guardar en tu ordenador",
       steps: [
-        "Toca «Descargar como fichero» arriba",
-        "Se guarda en tu carpeta de Descargas",
+        "Toca «Descargar como fichero» — se guarda en tu carpeta de Descargas",
         "También puedes hacer clic derecho sobre el vídeo → «Guardar vídeo como…»",
       ],
     },

@@ -7,6 +7,7 @@
 
 import Link from "next/link";
 import WatchInstructions from "@/components/WatchInstructions";
+import WatchActions from "@/components/WatchActions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Tu Reel" };
@@ -19,7 +20,6 @@ export default function WatchPage({
   const { jobId, filename } = params;
   // Reutilizamos el streaming del route API. Sin ?dl para reproducir inline.
   const src = `/shorts/output/${encodeURIComponent(jobId)}/${encodeURIComponent(filename)}`;
-  const dlHref = `${src}?dl=1`;
 
   return (
     <main className="mx-auto max-w-md px-4 py-6 pt-16">
@@ -33,21 +33,8 @@ export default function WatchPage({
         />
       </div>
 
-      <div className="mt-4 space-y-2">
-        <a
-          href={src}
-          target="_blank"
-          rel="noreferrer"
-          className="block w-full text-center rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/20"
-        >
-          📱 Guardar en galería
-        </a>
-        <a
-          href={dlHref}
-          className="block w-full text-center rounded-lg bg-white/5 border border-white/15 py-3 text-sm text-white/80 hover:bg-white/10"
-        >
-          ⬇︎ Descargar como fichero
-        </a>
+      <div className="mt-4">
+        <WatchActions src={src} filename={filename} />
       </div>
 
       <WatchInstructions />
