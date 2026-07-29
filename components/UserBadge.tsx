@@ -1,36 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 
 /** Barra fija arriba a la derecha con estado de sesión + créditos. */
 export default function UserBadge() {
   const { data: session, status, update } = useSession();
+  const didUpdate = useRef(false);
+  // Cache de la última sesión conocida para evitar el "flash a loading" mientras
+  // update() está en vuelo (NextAuth v4 puede pasar status a "loading").
+  const lastSession = useRef(session);
+  if (session) lastSession.current = session;
+  const effective = session || lastSession.current;
 
-  // El JWT solo se refresca cuando explícitamente llamamos update(); si no,
-  // tras una compra Stripe el topbar seguiría mostrando el saldo viejo. Lo
-  // forzamos al montar y cada vez que la pestaña vuelve a foco.
+  // Refrescar JWT una sola vez al montar (deps=[]). Con esto, tras volver
+  // de Stripe con ?paid=1 el topbar recoge el saldo nuevo. Evitamos oyentes
+  // de visibilitychange/focus porque en iOS se disparan a la mínima y
+  // provocan parpadeo. La página /account tiene su propio <PaidRefresher/>.
   useEffect(() => {
-    if (status !== "authenticated") return;
+    if (didUpdate.current) return;
+    didUpdate.current = true;
     update();
-    const onVis = () => {
-      if (document.visibilityState === "visible") update();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("focus", onVis);
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("focus", onVis);
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
+  }, []);
 
-  if (status === "loading") {
-    return <div className="text-xs text-white/40">…</div>;
+  // Solo mostramos placeholder en el primer load absoluto (sin nada cacheado).
+  // Después mantenemos siempre el badge visible aunque un update() esté en vuelo.
+  if (status === "loading" && !effective) {
+    return <div className="h-6 w-24" aria-hidden />;
   }
 
-  if (!session?.user) {
+  if (!effective?.user) {
     return (
       <div className="flex items-center gap-2 text-sm">
         <Link href="/login" className="rounded-full border border-white/15 px-3 py-1 text-white/80 hover:border-white/30 hover:text-white">
@@ -43,7 +44,7 @@ export default function UserBadge() {
     );
   }
 
-  const u = session.user;
+  const u = effective.user;
   return (
     <div className="flex items-center gap-2 text-sm">
       {u.role === "admin" && (
