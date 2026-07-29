@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
         emailNotifications: true,
         email: true,
         isPremium: true,
+        role: true,
         watermarkText: true,
         watermarkAnim: true,
       },
@@ -53,8 +54,9 @@ export async function POST(req: NextRequest) {
 
     const wantsTg = dbUser?.telegramChatId && dbUser.telegramNotifications;
     const wantsEmail = dbUser?.emailNotifications && dbUser.email;
-    const wmText = dbUser?.isPremium ? dbUser.watermarkText ?? "" : undefined;
-    const wmAnim = dbUser?.isPremium ? !!dbUser.watermarkAnim : false;
+    const canCustomize = dbUser?.isPremium || dbUser?.role === "admin";
+    const wmText = canCustomize ? dbUser.watermarkText ?? "" : undefined;
+    const wmAnim = canCustomize ? !!dbUser.watermarkAnim : false;
 
     const data = await callWorkerJson<{ job_id: string }>(
       "/quick_clip",

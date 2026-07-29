@@ -41,13 +41,14 @@ export async function PATCH(req: NextRequest) {
     }
     data.name = trimmed || null;
   }
-  // Watermark: solo premium puede tocarlo. Silenciosamente ignoramos si no.
+  // Watermark: premium OR admin puede tocarlo (admin es siempre "super-premium").
   if (typeof body.watermarkText === "string" || typeof body.watermarkAnim === "boolean") {
     const u = await prisma.user.findUnique({
       where: { id: user.id },
-      select: { isPremium: true },
+      select: { isPremium: true, role: true },
     });
-    if (u?.isPremium) {
+    const canCustomize = u?.isPremium || u?.role === "admin";
+    if (canCustomize) {
       if (typeof body.watermarkText === "string") {
         const trimmed = body.watermarkText.trim();
         if (trimmed.length > 40) {

@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
         emailNotifications: true,
         email: true,
         isPremium: true,
+        role: true,
         watermarkText: true,
         watermarkAnim: true,
       },
@@ -56,10 +57,11 @@ export async function POST(req: NextRequest) {
     const wantsTg = dbUser?.telegramChatId && dbUser.telegramNotifications;
     const wantsEmail = dbUser?.emailNotifications && dbUser.email;
 
-    // Watermark: los users no-premium NO pueden overrideal — siempre estático "tuvideodown.com".
-    // Los premium eligen su propio texto (vacío = sin watermark) y si va animado.
-    const wmText = dbUser?.isPremium ? dbUser.watermarkText ?? "" : undefined;
-    const wmAnim = dbUser?.isPremium ? !!dbUser.watermarkAnim : false;
+    // Watermark: los users free NO pueden overrideal — siempre estático "tuvideodown.com".
+    // Premium y admin eligen su propio texto (vacío = sin watermark) y si va animado.
+    const canCustomize = dbUser?.isPremium || dbUser?.role === "admin";
+    const wmText = canCustomize ? dbUser.watermarkText ?? "" : undefined;
+    const wmAnim = canCustomize ? !!dbUser.watermarkAnim : false;
 
     const data = await callWorkerJson<{ job_id: string }>(
       "/generate",

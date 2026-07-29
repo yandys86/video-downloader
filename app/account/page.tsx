@@ -118,7 +118,7 @@ export default async function AccountPage({
         />
       </section>
 
-      {user?.isPremium && (
+      {(user?.isPremium || user?.role === "admin") && (
         <section className="mb-8">
           <h2 className="mb-3 text-lg font-semibold text-white">Marca de agua</h2>
           <WatermarkEditor
