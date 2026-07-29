@@ -45,23 +45,30 @@ CREATE INDEX IF NOT EXISTS idx_job_subs_job ON job_subscriptions(job_id);
 
 
 def init_db(db_path: str) -> None:
+    """Crea tablas + fija PRAGMAs persistentes. Se llama una sola vez al
+    arrancar el worker (main.py lifespan). journal_mode y synchronous son
+    persistentes a nivel de fichero, no hace falta re-fijarlos por conexión.
+    """
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as db:
+    with sqlite3.connect(db_path, timeout=30) as db:
+        db.execute("PRAGMA busy_timeout=30000")
+        # WAL: N lectores concurrentes + 1 escritor. Persistente en el header.
+        db.execute("PRAGMA journal_mode=WAL")
+        # NORMAL: rápido con WAL, sin perder durabilidad para nuestro caso.
+        db.execute("PRAGMA synchronous=NORMAL")
         db.executescript(SCHEMA)
 
 
 @contextmanager
 def _conn(db_path: str):
     # timeout: SQLite espera N segundos si la BBDD está locked antes de
-    # devolver OperationalError. Subimos a 30s para absorber picos.
+    # devolver OperationalError. 30s absorbe cualquier pico realista.
+    # NO fijamos journal_mode aquí: cada set exigía contender por un lock
+    # al abrir cada conexión y los jobs concurrentes se atropellaban con
+    # "database is locked". init_db lo deja persistido.
     db = sqlite3.connect(db_path, timeout=30, isolation_level=None)
     db.row_factory = sqlite3.Row
-    # WAL mode: permite N lectores concurrentes junto a 1 escritor.
-    # Sin WAL, cualquier lectura durante una escritura da "database is locked".
-    # WAL persiste a nivel de fichero — set idempotente por conexión.
-    db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA synchronous=NORMAL")  # más rápido con WAL, sin perder durabilidad relevante
-    db.execute("PRAGMA busy_timeout=30000")  # 30s (redundante con timeout=, defensa en profundidad)
+    db.execute("PRAGMA busy_timeout=30000")
     try:
         yield db
     finally:
