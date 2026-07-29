@@ -302,48 +302,66 @@ def build_background_gradient(duration: float, out_mp4: Path) -> None:
 # ---------------------------------------------------------------------------
 # 6. Composición final: fondo + voz + captions + música opcional
 # ---------------------------------------------------------------------------
+def _escape_drawtext(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
+
+
 def compose_final(
     bg_mp4: Path,
     voice_mp3: Path,
     captions_ass: Path | None,
     out_mp4: Path,
     music_mp3: Path | None = None,
-    watermark_text: str = "",
-    watermark_anim: bool = False,
+    brand_watermark: str = "",
+    user_watermark: str = "",
+    user_watermark_anim: bool = False,
 ) -> None:
+    """
+    Watermarks:
+    - brand_watermark: SIEMPRE se dibuja (tuvideodown.com por defecto). Va
+      abajo a la izquierda, pequeño y semi-transparente. Protege la marca.
+    - user_watermark: OPCIONAL, solo si premium+ tiene su texto. Va abajo a
+      la derecha si estático, o desplazándose por todo el frame (Lissajous)
+      si user_watermark_anim=True — anti-piratería.
+    """
     out_mp4.parent.mkdir(parents=True, exist_ok=True)
 
-    # Cadena de filtros de vídeo: captions (opcional) + watermark (opcional).
-    # captions_ass=None => Reel sin subtítulos (útil para música/karaoke, donde
-    # las auto-captions salen mal). Si no hay ningún filtro, ni siquiera pasamos
-    # -vf para que ffmpeg pueda copiar el vídeo tal cual (más rápido).
     vf_filters: list[str] = []
     if captions_ass is not None:
         # Escapamos la ruta del .ass para ffmpeg (filtro `ass=` es exquisito con paths).
         ass_escaped = str(captions_ass).replace(":", "\\:").replace("'", "\\'")
         vf_filters.append(f"ass='{ass_escaped}'")
-    if watermark_text.strip():
-        # Escapamos comillas y ':' para drawtext (que también parsea :).
-        wm = watermark_text.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
-        if watermark_anim:
-            # Anti-piratería: el texto se mueve por todo el frame con Lissajous
-            # (senos con periodos diferentes en x/y). Amplitudes generosas para
-            # cubrir casi toda la superficie a ~1 vuelta cada ~14s.
-            #   x = (w-tw)/2 + (w-tw)/2 * sin(2*PI*t/14)
-            #   y = (h-th)/2 + (h-th)/2 * sin(2*PI*t/9 + PI/3)
+
+    # Brand watermark — siempre (o al menos siempre que la instancia lo tenga configurado).
+    # Esquina inferior izquierda, discreto pero visible.
+    if brand_watermark.strip():
+        b = _escape_drawtext(brand_watermark)
+        vf_filters.append(
+            f"drawtext=text='{b}':fontcolor=white@0.55:fontsize=28:"
+            f"borderw=1:bordercolor=black@0.7:"
+            f"x=24:y=h-th-24"
+        )
+
+    # User watermark — opcional. Estático abajo derecha, o animado por el frame.
+    if user_watermark.strip():
+        u = _escape_drawtext(user_watermark)
+        if user_watermark_anim:
+            # Lissajous: x/y con senos de periodos diferentes cubren casi todo
+            # el frame en ~14s/9s. Difícil de recortar en editor.
             x_expr = "(w-tw)/2 + (w-tw)/2*sin(2*PI*t/14)"
             y_expr = "(h-th)/2 + (h-th)/2*sin(2*PI*t/9 + PI/3)"
             vf_filters.append(
-                f"drawtext=text='{wm}':fontcolor=white@0.55:fontsize=42:"
+                f"drawtext=text='{u}':fontcolor=white@0.60:fontsize=42:"
                 f"borderw=2:bordercolor=black@0.6:"
                 f"x={x_expr}:y={y_expr}"
             )
         else:
             vf_filters.append(
-                f"drawtext=text='{wm}':fontcolor=white@0.75:fontsize=38:"
+                f"drawtext=text='{u}':fontcolor=white@0.80:fontsize=38:"
                 f"borderw=2:bordercolor=black@0.7:"
-                f"x=w-tw-24:y=h-th-32"
+                f"x=w-tw-24:y=h-th-24"
             )
+
     vf = ",".join(vf_filters)
     vf_args = ["-vf", vf] if vf else []
 

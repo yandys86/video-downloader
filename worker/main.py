@@ -240,6 +240,21 @@ def get_job(job_id: str) -> dict:
     return job
 
 
+@app.get("/files/{name}", dependencies=[Depends(require_secret)])
+def files(name: str) -> FileResponse:
+    """Sirve un fichero de output/ por nombre. Usado por el proxy Next.js
+    para los enlaces públicos que salen en emails/Telegram cuando el MP4 pesa
+    más del límite (~45 MB). Nombre debe ser plano (sin ../, sin subdirs) y
+    .mp4 para evitar path-traversal.
+    """
+    if "/" in name or ".." in name or "\x00" in name or not name.endswith(".mp4"):
+        raise HTTPException(400, "bad filename")
+    p = Path(settings.workspace_dir) / "output" / name
+    if not p.exists():
+        raise HTTPException(404, "no encontrado o caducado")
+    return FileResponse(str(p), media_type="video/mp4", filename=name)
+
+
 @app.get("/download/{job_id}/{idx}", dependencies=[Depends(require_secret)])
 def download(job_id: str, idx: int) -> FileResponse:
     job = storage.get_job(settings.db_path, job_id)

@@ -44,7 +44,7 @@ export default function WatermarkEditor({ initialText, initialAnim }: Props) {
           <span className="rounded-full bg-fuchsia-500/20 border border-fuchsia-400/40 px-2 py-0.5 text-[10px] font-medium text-fuchsia-200">PREMIUM</span>
         </div>
         <div className="mt-1 text-xs text-white/50">
-          Reemplaza el default de <code>tuvideodown.com</code> en tus Reels. Deja vacío para no llevar ninguno.
+          Se añade a tus Reels <b>además</b> de la marca <code>tuvideodown.com</code>. Déjalo vacío si solo quieres la del sitio.
         </div>
       </div>
 
