@@ -109,6 +109,7 @@ def notify_job_done(
 ) -> None:
     """Wrapper para llamar desde tasks al terminar un job."""
     base = settings.telegram_public_base_url.rstrip("/")
-    fallback = f"{base}/shorts/output/{job_id}/{file_path.name}"
+    # Página amigable con reproductor + botón guardar en galería.
+    fallback = f"{base}/shorts/watch/{job_id}/{file_path.name}"
     caption = f"🎬 <b>{label}</b>\n<code>{file_path.name}</code>"
     send_video(chat_id, file_path, caption, fallback_url=fallback)

@@ -26,7 +26,8 @@ def is_configured() -> bool:
 
 def _download_url(job_id: str, filename: str) -> str:
     base = settings.email_public_base_url.rstrip("/")
-    return f"{base}/shorts/output/{job_id}/{filename}"
+    # Página con reproductor + botones (guardar galería / descargar fichero).
+    return f"{base}/shorts/watch/{job_id}/{filename}"
 
 
 def _html_body(hook: str, url: str, filename: str, attached: bool) -> str:

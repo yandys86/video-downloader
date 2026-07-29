@@ -38,8 +38,18 @@ export async function GET(
     return NextResponse.json({ error: "worker no configurado" }, { status: 500 });
   }
 
+  // Query ?dl=1 fuerza descarga (Content-Disposition: attachment).
+  // Sin dl (default) va inline → reproducible en el navegador; permite
+  // long-press → "Guardar en fotos" en iOS/Android.
+  const forceDownload = req.nextUrl.searchParams.get("dl") === "1";
+  // Range para permitir seek durante playback
+  const range = req.headers.get("range") || undefined;
+
   const upstream = await fetch(`${WORKER_URL}/files/${encodeURIComponent(filename)}`, {
-    headers: { "X-Worker-Secret": WORKER_SECRET },
+    headers: {
+      "X-Worker-Secret": WORKER_SECRET,
+      ...(range ? { Range: range } : {}),
+    },
     cache: "no-store",
   });
   if (!upstream.ok || !upstream.body) {
@@ -51,10 +61,19 @@ export async function GET(
 
   const headers = new Headers();
   headers.set("Content-Type", "video/mp4");
-  headers.set("Content-Disposition", `attachment; filename="${filename}"`);
+  headers.set(
+    "Content-Disposition",
+    `${forceDownload ? "attachment" : "inline"}; filename="${filename}"`,
+  );
   const len = upstream.headers.get("content-length");
   if (len) headers.set("Content-Length", len);
+  const crange = upstream.headers.get("content-range");
+  if (crange) headers.set("Content-Range", crange);
+  headers.set("Accept-Ranges", "bytes");
   headers.set("Cache-Control", "private, max-age=300");
 
-  return new NextResponse(upstream.body, { status: 200, headers });
+  return new NextResponse(upstream.body, {
+    status: upstream.status === 206 ? 206 : 200,
+    headers,
+  });
 }
