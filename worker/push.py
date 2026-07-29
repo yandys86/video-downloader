@@ -13,7 +13,23 @@ log = logging.getLogger("shorts-worker.push")
 
 
 def is_configured() -> bool:
-    return bool(settings.vapid_private_key and settings.vapid_public_key_b64url)
+    if not (settings.vapid_private_key and settings.vapid_public_key_b64url):
+        return False
+    # Verificar la clave privada UNA vez al arrancar; si está mal formateada,
+    # log y desactivar en lugar de lanzar excepción en cada notify_job.
+    global _key_valid
+    if _key_valid is None:
+        try:
+            from py_vapid import Vapid
+            Vapid.from_string(private_key=settings.vapid_private_key)
+            _key_valid = True
+        except Exception as e:
+            log.warning("VAPID_PRIVATE_KEY inválida — push desactivado: %s", e)
+            _key_valid = False
+    return _key_valid
+
+
+_key_valid: bool | None = None
 
 
 def notify_job(job_id: str, title: str, body: str, url: Optional[str] = None) -> int:

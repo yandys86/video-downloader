@@ -128,7 +128,11 @@ def cleanup(dry_run: bool = False) -> dict:
     # --- jobs.db rows ---
     if Path(settings.db_path).exists():
         cutoff = int(now) - DEFAULT_RETENTION["db_days"] * 24 * 3600
+        # timeout=30 fija busy_timeout a nivel de driver, pero además lo
+        # forzamos con PRAGMA para asegurar que si hay writes concurrentes
+        # (analyze/generate en curso) esperamos en vez de fallar.
         db = sqlite3.connect(settings.db_path, timeout=30, isolation_level=None)
+        db.execute("PRAGMA busy_timeout=30000")
         try:
             if not dry_run:
                 r1 = db.execute(
