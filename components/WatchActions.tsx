@@ -18,22 +18,25 @@ function detectOS(): OS {
 }
 
 /**
- * En iOS 17+ el reproductor fullscreen nativo NO tiene 'Guardar en Fotos'
- * (movieron 'Save Video' fuera del share menu accesible desde web).
- * Los dos métodos que SÍ funcionan siempre:
- *   1. Long-press sobre <video> inline → menú Safari con "Guardar en Fotos".
- *      Un tap, sin límite de tamaño. Requiere que el user sepa hacerlo.
- *   2. Descargar como fichero → abre en Archivos → user toca vídeo →
- *      Compartir → "Guardar vídeo". Tres taps, garantizado.
- * Web Share API con File falla en iOS para vídeos >~50-100 MB.
+ * Realidad en iOS 17+:
+ *  - Long-press sobre <video> ya no ofrece "Guardar en Fotos" para vídeos
+ *    grandes servidos por HTTP.
+ *  - El fullscreen player nativo desde web tampoco tiene "Save Video".
+ *  - Web Share API con File falla para vídeos > ~50-100 MB.
  *
- * Android: Web Share con File suele funcionar; fallback descarga
- * (Descargas es visible como álbum en la galería nativa).
+ * → La única vía FIABLE en iOS es: descargar al iPhone (va a Archivos) y
+ *   desde Archivos compartir a Fotos. Instrucciones en 2 pasos claros.
+ *
+ * Android: Web Share con File suele funcionar; si no, descarga → aparece
+ * en el álbum Descargas de la galería nativa.
+ *
+ * Desktop: descarga directa.
  */
 export default function WatchActions({ src, filename }: Props) {
   const [os, setOs] = useState<OS>("other");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
 
   useEffect(() => setOs(detectOS()), []);
 
@@ -55,36 +58,44 @@ export default function WatchActions({ src, filename }: Props) {
     }
   }
 
-  async function saveToGallery() {
+  function triggerDownload() {
+    const a = document.createElement("a");
+    a.href = `${src}?dl=1`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setDownloaded(true);
+  }
+
+  async function primaryAction() {
     setMsg(null);
     setBusy(true);
     try {
-      if (os === "android" || os === "other") {
-        const ok = await tryWebShare();
-        if (ok) {
-          setMsg("✓ Selecciona «Fotos» o «Guardar vídeo» en el menú");
-          return;
-        }
-      } else {
-        // iOS: intentamos share primero (funciona para vídeos pequeños).
+      if (os === "ios") {
+        // iOS: probamos share primero (funciona para clips pequeños),
+        // si falla descargamos y mostramos instrucciones.
         const ok = await tryWebShare();
         if (ok) {
           setMsg("✓ Elige «Guardar vídeo» en el menú");
           return;
         }
-        setMsg("El vídeo es grande — usa long-press sobre el vídeo (ver arriba) o descárgalo como fichero.");
+        triggerDownload();
         return;
       }
-      // Fallback Android/desktop: descarga directa
-      const a = document.createElement("a");
-      a.href = `${src}?dl=1`;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      // Android: Web Share
+      if (os === "android") {
+        const ok = await tryWebShare();
+        if (ok) {
+          setMsg("✓ Elige «Fotos» o «Guardar vídeo» en el menú");
+          return;
+        }
+      }
+      // Desktop y Android fallback: descarga directa
+      triggerDownload();
       setMsg(
         os === "android"
-          ? "Descargando… lo verás en la carpeta Descargas de tu Galería"
+          ? "Descargando… lo verás en el álbum Descargas de tu Galería"
           : "Descargando en tu carpeta de Descargas",
       );
     } finally {
@@ -92,63 +103,67 @@ export default function WatchActions({ src, filename }: Props) {
     }
   }
 
+  const btnLabel =
+    os === "ios"
+      ? "⬇︎ Descargar al iPhone"
+      : os === "android"
+        ? "📤 Guardar / Compartir"
+        : "⬇︎ Descargar";
+
   return (
     <div className="space-y-3">
+      <button
+        onClick={primaryAction}
+        disabled={busy}
+        className="block w-full text-center rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 py-3.5 text-base font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-60"
+      >
+        {busy ? "Preparando…" : btnLabel}
+      </button>
+
       {os === "ios" && (
-        <div className="rounded-xl border-2 border-fuchsia-400/60 bg-fuchsia-500/10 p-4 text-center">
-          <div className="text-xs uppercase tracking-wide text-fuchsia-200/80 mb-1">
-            📱 iPhone — método más rápido
+        <div className="rounded-xl border-2 border-fuchsia-400/50 bg-fuchsia-500/10 p-4">
+          <div className="text-xs uppercase tracking-wide text-fuchsia-200/80 mb-2">
+            📱 Pasar el Reel a Fotos en iPhone
           </div>
-          <div className="text-base text-white leading-relaxed">
-            👆 <b>Mantén pulsado</b> sobre el vídeo de arriba
-            <br />
-            → toca <b>«Guardar en Fotos»</b>
-          </div>
-          <div className="mt-2 text-xs text-white/50">
-            Sin límite de tamaño. Si no aparece el menú, espera 2s a que
-            cargue el vídeo o pruébalo pausado.
+          <ol className="ml-4 list-decimal space-y-2 text-sm text-white/85">
+            <li>
+              Toca <b>«Descargar al iPhone»</b> arriba. Safari te preguntará
+              si quieres descargar — dale <b>«Descargar»</b>.
+              {downloaded && (
+                <div className="mt-1 text-xs text-emerald-300">
+                  ✓ Descarga iniciada, mira el icono ⤓ arriba a la derecha de Safari
+                </div>
+              )}
+            </li>
+            <li>
+              Abre la app <b>Archivos</b> (la carpeta azul) →{" "}
+              <b>Descargas</b> → toca tu Reel.
+            </li>
+            <li>
+              En el reproductor toca el botón <b>compartir ⤴︎</b> abajo a la
+              izquierda → desliza y toca <b>«Guardar vídeo»</b>.
+            </li>
+            <li>Ya está en tu app <b>Fotos</b>. 🎉</li>
+          </ol>
+          <div className="mt-3 text-[11px] text-white/40">
+            Safari no puede guardar directo a Fotos desde una web —
+            este rodeo es lo más rápido posible.
           </div>
         </div>
       )}
 
-      <button
-        onClick={saveToGallery}
-        disabled={busy}
-        className="block w-full text-center rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-60"
-      >
-        {busy ? "Preparando…" : "📤 Compartir / Guardar en galería"}
-      </button>
-
-      <a
-        href={`${src}?dl=1`}
-        download={filename}
-        className="block w-full text-center rounded-lg bg-white/5 border border-white/15 py-3 text-sm text-white/80 hover:bg-white/10"
-      >
-        ⬇︎ Descargar como fichero
-      </a>
+      {os === "android" && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-white/70">
+          Se abre el menú compartir de Android — elige <b>«Fotos»</b>,{" "}
+          <b>«Galería»</b> o <b>«Guardar vídeo»</b>. Si no, el vídeo cae en{" "}
+          Descargas (visible como álbum en tu Galería).
+        </div>
+      )}
 
       {msg && (
         <div className="rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-3 py-2 text-xs text-fuchsia-100 text-center">
           {msg}
         </div>
-      )}
-
-      {os === "ios" && (
-        <details className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-white/70">
-          <summary className="cursor-pointer font-medium text-white">
-            Si el long-press no te funciona…
-          </summary>
-          <ol className="mt-2 ml-4 list-decimal space-y-1 text-xs">
-            <li>Toca <b>«Descargar como fichero»</b> arriba</li>
-            <li>Safari te preguntará si quieres descargar — dile sí</li>
-            <li>Abre la app <b>Archivos</b> → Descargas → tu Reel</li>
-            <li>Toca el vídeo → botón compartir <b>⤴︎</b> → <b>«Guardar vídeo»</b></li>
-            <li>Ya está en Fotos</li>
-          </ol>
-          <div className="mt-2 text-xs text-white/40">
-            Este método siempre funciona, sea cual sea el tamaño del vídeo.
-          </div>
-        </details>
       )}
     </div>
   );
