@@ -371,8 +371,10 @@ def compose_final(
             "-i", str(bg_mp4),
             "-i", str(voice_mp3),
             *vf_args,
-            "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+            "-maxrate", "3500k", "-bufsize", "7000k",  # cap picos → tamaño predecible
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
             "-shortest", "-movflags", "+faststart",
             str(out_mp4),
         ]
@@ -387,8 +389,10 @@ def compose_final(
             "[1:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]",
             "-map", "0:v", "-map", "[a]",
             *vf_args,
-            "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+            "-maxrate", "3500k", "-bufsize", "7000k",  # cap picos → tamaño predecible
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
             "-shortest", "-movflags", "+faststart",
             str(out_mp4),
         ]
