@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   src: string;
@@ -18,35 +18,26 @@ function detectOS(): OS {
 }
 
 /**
- * Botones de guardar/descargar para /shorts/watch.
+ * En iOS 17+ el reproductor fullscreen nativo NO tiene 'Guardar en Fotos'
+ * (movieron 'Save Video' fuera del share menu accesible desde web).
+ * Los dos métodos que SÍ funcionan siempre:
+ *   1. Long-press sobre <video> inline → menú Safari con "Guardar en Fotos".
+ *      Un tap, sin límite de tamaño. Requiere que el user sepa hacerlo.
+ *   2. Descargar como fichero → abre en Archivos → user toca vídeo →
+ *      Compartir → "Guardar vídeo". Tres taps, garantizado.
+ * Web Share API con File falla en iOS para vídeos >~50-100 MB.
  *
- * iOS: Safari NO deja guardar directo a Fotos desde un <a download>. Lo que sí
- * funciona:
- *   1. Long-press sobre <video> que reproduce inline → menú nativo con
- *      "Guardar en Fotos" (nuestra ruta MÁS fiable).
- *   2. Fullscreen nativo (webkitEnterFullscreen) → botón compartir del player
- *      → "Guardar vídeo".
- *   3. Web Share API con File (falla si el mp4 pesa mucho o iOS no lo acepta).
- *
- * Android: Chrome soporta Web Share con File decentemente. Fallback: descarga
- * como fichero (el Reel aparece en el álbum Descargas de la galería).
- *
- * Desktop: descarga directa (attachment).
+ * Android: Web Share con File suele funcionar; fallback descarga
+ * (Descargas es visible como álbum en la galería nativa).
  */
 export default function WatchActions({ src, filename }: Props) {
   const [os, setOs] = useState<OS>("other");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [showHint, setShowHint] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  useEffect(() => {
-    setOs(detectOS());
-    // Buscar el <video> del page (está en el server component encima).
-    videoRef.current = document.querySelector("video");
-  }, []);
+  useEffect(() => setOs(detectOS()), []);
 
-  async function trySaveWebShare(): Promise<boolean> {
+  async function tryWebShare(): Promise<boolean> {
     try {
       const res = await fetch(src, { cache: "no-store" });
       if (!res.ok) return false;
@@ -59,7 +50,7 @@ export default function WatchActions({ src, filename }: Props) {
       }
       return false;
     } catch (e: any) {
-      if (e?.name === "AbortError") return true; // user canceled — no error real
+      if (e?.name === "AbortError") return true;
       return false;
     }
   }
@@ -67,43 +58,27 @@ export default function WatchActions({ src, filename }: Props) {
   async function saveToGallery() {
     setMsg(null);
     setBusy(true);
-    setShowHint(false);
     try {
-      if (os === "ios") {
-        // iOS: intentamos primero fullscreen nativo — desde ahí el botón
-        // compartir del player tiene "Guardar vídeo" que va DIRECTO a Fotos.
-        const v = videoRef.current;
-        if (v && typeof (v as any).webkitEnterFullscreen === "function") {
-          try {
-            await v.play(); // requerido por iOS antes de fullscreen
-          } catch {}
-          try {
-            (v as any).webkitEnterFullscreen();
-            setMsg("En el reproductor: pulsa ⤴︎ compartir → «Guardar vídeo»");
-            setShowHint(true);
-            return;
-          } catch {}
+      if (os === "android" || os === "other") {
+        const ok = await tryWebShare();
+        if (ok) {
+          setMsg("✓ Selecciona «Fotos» o «Guardar vídeo» en el menú");
+          return;
         }
-        // Fallback iOS: Web Share API
-        const ok = await trySaveWebShare();
-        if (ok) return;
-        // Último recurso iOS: instrucciones de long-press
-        setMsg(null);
-        setShowHint(true);
-        return;
-      }
-
-      // Android / otros: Web Share API con file (Chrome Android lo hace bien).
-      const ok = await trySaveWebShare();
-      if (ok) {
-        setMsg("✓ Selecciona «Fotos» o «Guardar vídeo» en el menú");
+      } else {
+        // iOS: intentamos share primero (funciona para vídeos pequeños).
+        const ok = await tryWebShare();
+        if (ok) {
+          setMsg("✓ Elige «Guardar vídeo» en el menú");
+          return;
+        }
+        setMsg("El vídeo es grande — usa long-press sobre el vídeo (ver arriba) o descárgalo como fichero.");
         return;
       }
       // Fallback Android/desktop: descarga directa
       const a = document.createElement("a");
       a.href = `${src}?dl=1`;
       a.download = filename;
-      a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -118,13 +93,20 @@ export default function WatchActions({ src, filename }: Props) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {os === "ios" && (
-        <div className="rounded-xl border-2 border-fuchsia-400/50 bg-fuchsia-500/10 p-3 text-center">
-          <div className="text-xs text-fuchsia-100/80 mb-1">📱 iPhone — el método más rápido:</div>
-          <div className="text-sm text-white font-medium">
-            👆 <b>Mantén pulsado</b> sobre el vídeo de arriba<br />
-            → <b>«Guardar en Fotos»</b>
+        <div className="rounded-xl border-2 border-fuchsia-400/60 bg-fuchsia-500/10 p-4 text-center">
+          <div className="text-xs uppercase tracking-wide text-fuchsia-200/80 mb-1">
+            📱 iPhone — método más rápido
+          </div>
+          <div className="text-base text-white leading-relaxed">
+            👆 <b>Mantén pulsado</b> sobre el vídeo de arriba
+            <br />
+            → toca <b>«Guardar en Fotos»</b>
+          </div>
+          <div className="mt-2 text-xs text-white/50">
+            Sin límite de tamaño. Si no aparece el menú, espera 2s a que
+            cargue el vídeo o pruébalo pausado.
           </div>
         </div>
       )}
@@ -134,7 +116,7 @@ export default function WatchActions({ src, filename }: Props) {
         disabled={busy}
         className="block w-full text-center rounded-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 disabled:opacity-60"
       >
-        {busy ? "Preparando…" : os === "ios" ? "▶︎ Abrir en reproductor iOS" : "📱 Guardar en galería"}
+        {busy ? "Preparando…" : "📤 Compartir / Guardar en galería"}
       </button>
 
       <a
@@ -151,13 +133,22 @@ export default function WatchActions({ src, filename }: Props) {
         </div>
       )}
 
-      {showHint && os === "ios" && (
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs text-white/70 space-y-1">
-          <div className="font-medium text-white">Si no ves «Guardar vídeo»:</div>
-          <div>· Espera 1-2 segundos a que cargue el vídeo</div>
-          <div>· En el reproductor fullscreen, el botón compartir es el ⤴︎ arriba-derecha</div>
-          <div>· O vuelve atrás y mantén pulsado sobre el vídeo pequeño</div>
-        </div>
+      {os === "ios" && (
+        <details className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-white/70">
+          <summary className="cursor-pointer font-medium text-white">
+            Si el long-press no te funciona…
+          </summary>
+          <ol className="mt-2 ml-4 list-decimal space-y-1 text-xs">
+            <li>Toca <b>«Descargar como fichero»</b> arriba</li>
+            <li>Safari te preguntará si quieres descargar — dile sí</li>
+            <li>Abre la app <b>Archivos</b> → Descargas → tu Reel</li>
+            <li>Toca el vídeo → botón compartir <b>⤴︎</b> → <b>«Guardar vídeo»</b></li>
+            <li>Ya está en Fotos</li>
+          </ol>
+          <div className="mt-2 text-xs text-white/40">
+            Este método siempre funciona, sea cual sea el tamaño del vídeo.
+          </div>
+        </details>
       )}
     </div>
   );
