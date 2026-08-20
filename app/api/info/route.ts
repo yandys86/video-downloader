@@ -28,7 +28,8 @@ const IG_COOKIES_OK = !!IG_COOKIES_PATH && existsSync(IG_COOKIES_PATH);
 function dumpJson(
   url: string,
   useCustomUA: boolean,
-  cookiesPath?: string
+  cookiesPath?: string,
+  platform?: string
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const args = [
     url,
@@ -42,6 +43,9 @@ function dumpJson(
       "--user-agent", USER_AGENT,
       "--add-header", "Accept-Language:en-US,en;q=0.9"
     );
+  }
+  if (platform === "youtube") {
+    args.push("--extractor-args", "youtube:player_client=web,android");
   }
   if (cookiesPath) {
     args.push("--cookies", cookiesPath);
@@ -97,7 +101,7 @@ export async function POST(req: NextRequest) {
     }
 
     const cookiesPath = platform.platform === "instagram" ? IG_COOKIES_PATH : undefined;
-    const result = await dumpJson(url, platform.platform !== "facebook", cookiesPath);
+    const result = await dumpJson(url, platform.platform !== "facebook", cookiesPath, platform.platform);
 
     if (result.code !== 0 || !result.stdout.trim()) {
       return NextResponse.json(

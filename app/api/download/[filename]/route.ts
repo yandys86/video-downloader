@@ -193,6 +193,11 @@ export async function GET(
       "--add-header", "Accept-Language:en-US,en;q=0.9"
     );
   }
+  if (platform.platform === "youtube") {
+    // El player_client por defecto (visionos) devuelve 403 en googlevideo.com
+    // desde IPs de servidor. web+android da URLs firmadas que sí bajan.
+    args.push("--extractor-args", "youtube:player_client=web,android");
+  }
   if (platform.platform === "instagram") {
     args.push("--cookies", IG_COOKIES_PATH);
   }
