@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "whisper-large-v3-turbo"
 
+    # --- YouTube (subida de Shorts al canal del usuario) ---
+    # Vacíos = se usan <workspace>/youtube/client_secrets.json y token.json.
+    youtube_client_secrets: str = ""
+    youtube_token_file: str = ""
+    # Zona del usuario para calcular los huecos de publicación (08:00 / 20:00).
+    tz_publicacion: str = "America/Chicago"
+    # Cuántos Shorts por vídeo y cada cuánto se publican.
+    autoshorts_por_video: int = 2
+    autoshorts_cada_horas: int = 12
+
     # Watermark opcional en la esquina de cada Short. Vacío = sin watermark.
     # Ej: "tuvideodown.com" — se dibuja con drawtext de ffmpeg.
     watermark_text: str = ""

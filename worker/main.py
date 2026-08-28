@@ -107,6 +107,17 @@ class GenerateRequest(BaseModel):
     notify_email: str | None = None
 
 
+class AutoShortsRequest(BaseModel):
+    """Un enlace → N Shorts subidos y programados en el canal del usuario."""
+    url: str = Field(..., min_length=8, max_length=2048)
+    chat_id: str = ""                       # a quién avisar por Telegram
+    n: int = Field(2, ge=1, le=5)
+    cada_horas: int = Field(12, ge=1, le=168)
+    style: str = Field("blur", pattern=r"^(original|blur|loop|gradient)$")
+    voice_mode: str = Field("original", pattern=r"^(ai|original)$")
+    client_ip: str = ""
+
+
 class QuickClipRequest(BaseModel):
     """Recorte manual: baja SOLO un tramo del vídeo y genera un Short.
     Ideal para películas/series largas donde ya sabes qué momento quieres.
@@ -228,6 +239,32 @@ def quick_clip(req: QuickClipRequest, request: Request) -> JobRef:
         client_ip=ip,
     )
     tasks.submit(tasks.run_quick_clip, job_id)
+    return JobRef(job_id=job_id)
+
+
+@app.post("/autoshorts", response_model=JobRef, dependencies=[Depends(require_secret)])
+def autoshorts(req: AutoShortsRequest, request: Request) -> JobRef:
+    """Cadena completa: analizar → montar → subir con fecha.
+
+    Devuelve enseguida con el job_id; el trabajo real tarda entre 5 y 20 min y
+    avisa por Telegram al terminar.
+    """
+    from . import autoshorts as _auto
+
+    ip = req.client_ip or (request.client.host if request.client else "")
+    _check_daily_limit(ip)
+    # Sin credenciales de YouTube esto no puede acabar bien: mejor fallar aquí,
+    # antes de gastar 15 minutos de CPU renderizando algo que no se va a poder
+    # subir.
+    try:
+        from . import youtube_up
+        youtube_up.credenciales()
+    except Exception as e:
+        raise HTTPException(400, f"YouTube sin autorizar: {e}")
+
+    job_id = storage.new_job(settings.db_path, "autoshorts",
+                             req.model_dump(exclude={"client_ip"}), client_ip=ip)
+    tasks.submit(_auto.run_autoshorts, job_id)
     return JobRef(job_id=job_id)
 
 

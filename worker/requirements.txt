@@ -13,3 +13,7 @@ requests>=2.32   # faster-whisper lo importa pero huggingface_hub 1.x ya no lo t
 pywebpush>=2.0.0
 py-vapid>=1.9.1
 cryptography>=41.0
+
+# Subida de Shorts a YouTube (worker/youtube_up.py)
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.1

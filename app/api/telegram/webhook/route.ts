@@ -12,10 +12,114 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { sendMessage } from "@/lib/telegram";
+import {
+  answerCallback,
+  editKeyboard,
+  sendKeyboard,
+  sendMessage,
+  type Boton,
+} from "@/lib/telegram";
+import { callWorkerJson } from "@/lib/workerProxy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const RE_YOUTUBE =
+  /(?:youtube\.com\/(?:watch\?v=|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+
+function menuPrincipal(): Boton[][] {
+  return [
+    [{ text: "🎬 Shorts de un vídeo", callback_data: "m|auto" }],
+    [
+      { text: "💳 Mis créditos", callback_data: "m|status" },
+      { text: "❓ Ayuda", callback_data: "m|help" },
+    ],
+  ];
+}
+
+const TEXTO_MENU =
+  "🎬 <b>TuVideoDown</b>\n\n" +
+  "Mándame el enlace de un vídeo <b>de tu canal</b> y te saco Shorts, " +
+  "los subo y te los programo.";
+
+const TEXTO_AUTO =
+  "🔗 <b>Pégame el enlace del vídeo</b>\n\n" +
+  "Tiene que ser de un canal tuyo. Sacaré <b>2 Shorts</b> y los programaré " +
+  "<b>cada 12 horas</b>, en los huecos de 08:00 y 20:00.\n\n" +
+  "<i>Tarda entre 5 y 20 minutos. Te aviso aquí cuando estén.</i>";
+
+const TEXTO_AYUDA =
+  "<b>Cómo va esto</b>\n\n" +
+  "1. Toca <b>Shorts de un vídeo</b>\n" +
+  "2. Pega el enlace de YouTube\n" +
+  "3. Confirma\n\n" +
+  "Yo analizo el vídeo, escojo los 2 mejores momentos, los monto en vertical " +
+  "con subtítulos y los subo <b>privados con fecha</b>: YouTube los publica " +
+  "solo a su hora.\n\n" +
+  "<code>/menu</code> para volver aquí.";
+
+async function textoCreditos(chatId: number): Promise<string> {
+  const user = await prisma.user.findFirst({
+    where: { telegramChatId: String(chatId) },
+    select: { email: true, credits: true, role: true },
+  });
+  if (!user) return "No estás vinculado. Usa <code>/start CODIGO</code>.";
+  const credits = user.role === "admin" ? "∞ (admin)" : String(user.credits);
+  return `Cuenta: <code>${user.email}</code>\nCréditos: <b>${credits}</b>`;
+}
+
+/** Taps en los botones del menú. */
+async function manejarCallback(cb: any): Promise<void> {
+  const chatId = cb.message?.chat?.id;
+  const msgId = cb.message?.message_id;
+  const data = String(cb.data || "");
+  await answerCallback(cb.id);
+  if (!chatId || !msgId) return;
+
+  if (data === "m|main") {
+    await editKeyboard(chatId, msgId, TEXTO_MENU, menuPrincipal());
+    return;
+  }
+  if (data === "m|auto") {
+    await editKeyboard(chatId, msgId, TEXTO_AUTO, [
+      [{ text: "◀ Menú", callback_data: "m|main" }],
+    ]);
+    return;
+  }
+  if (data === "m|status") {
+    await editKeyboard(chatId, msgId, await textoCreditos(chatId), [
+      [{ text: "◀ Menú", callback_data: "m|main" }],
+    ]);
+    return;
+  }
+  if (data === "m|help") {
+    await editKeyboard(chatId, msgId, TEXTO_AYUDA, [
+      [{ text: "◀ Menú", callback_data: "m|main" }],
+    ]);
+    return;
+  }
+
+  // go|<videoId> — confirmado: lanzar
+  if (data.startsWith("go|")) {
+    const url = `https://www.youtube.com/watch?v=${data.slice(3)}`;
+    await editKeyboard(chatId, msgId, "🚀 Lanzado. Te aviso aquí cuando estén.", null);
+    try {
+      await callWorkerJson("/autoshorts", {
+        method: "POST",
+        body: JSON.stringify({ url, chat_id: String(chatId), n: 2, cada_horas: 12 }),
+      });
+    } catch (e: any) {
+      await sendMessage(
+        chatId,
+        `❌ No se pudo lanzar: ${String(e?.message || e).slice(0, 200)}`,
+      );
+    }
+    return;
+  }
+
+  // Botón de un menú viejo tras un despliegue: contestar algo, no quedarse mudo.
+  await editKeyboard(chatId, msgId, TEXTO_MENU, menuPrincipal());
+}
 
 export async function POST(req: NextRequest) {
   // Verificación opcional del secret
@@ -32,6 +136,14 @@ export async function POST(req: NextRequest) {
     update = await req.json();
   } catch {
     return NextResponse.json({ ok: true }); // ignorar malformed
+  }
+
+  // Taps en botones. OJO: Telegram solo los manda si el webhook se registró
+  // con allowed_updates incluyendo "callback_query" — ver scripts/set-webhook.sh.
+  // Sin eso los menús se dibujan perfectos y no responden a nada.
+  if (update?.callback_query) {
+    await manejarCallback(update.callback_query);
+    return NextResponse.json({ ok: true });
   }
 
   const msg = update?.message;
@@ -81,6 +193,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (text === "/menu") {
+    await sendKeyboard(chatId, TEXTO_MENU, menuPrincipal());
+    return NextResponse.json({ ok: true });
+  }
+
+  // Un enlace de YouTube suelto: preguntar antes de gastar 15 min de CPU.
+  const m = text.match(RE_YOUTUBE);
+  if (m) {
+    const user = await prisma.user.findFirst({
+      where: { telegramChatId: String(chatId) },
+      select: { id: true },
+    });
+    if (!user) {
+      await sendMessage(
+        chatId,
+        "Primero vincula tu cuenta con <code>/start CODIGO</code>.",
+      );
+      return NextResponse.json({ ok: true });
+    }
+    await sendKeyboard(
+      chatId,
+      `🎬 <b>¿Saco 2 Shorts de este vídeo?</b>\n\n` +
+        `<code>${m[0]}</code>\n\n` +
+        `Se subirán a tu canal <b>privados con fecha</b>, separados 12 horas.\n\n` +
+        `<i>Comprueba que el vídeo es de un canal tuyo: subir material ajeno ` +
+        `puede costarte un aviso de copyright.</i>`,
+      [
+        [{ text: "🚀 Sí, adelante", callback_data: `go|${m[1]}` }],
+        [{ text: "✖ No", callback_data: "m|main" }],
+      ],
+    );
+    return NextResponse.json({ ok: true });
+  }
+
   if (text === "/status") {
     const user = await prisma.user.findFirst({
       where: { telegramChatId: String(chatId) },
@@ -104,13 +250,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Comando desconocido
-  await sendMessage(
-    chatId,
-    "Comandos disponibles:\n" +
-      "<code>/start CODIGO</code> — vincular cuenta\n" +
-      "<code>/status</code> — ver créditos\n" +
-      "<code>/unlink</code> — desvincular",
-  );
+  // Cualquier otra cosa: enseñar el menú en vez de una lista de comandos.
+  await sendKeyboard(chatId, TEXTO_MENU, menuPrincipal());
   return NextResponse.json({ ok: true });
 }
