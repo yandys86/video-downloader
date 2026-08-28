@@ -9,7 +9,17 @@ AUTORIZACIÓN (una vez por canal, hace falta navegador):
     python -m worker.youtube_up --authorize
 
 El CT es headless, así que el flujo se corre desde un equipo con navegador y
-el token resultante se copia al servidor. El token no caduca mientras la
+el token resultante se copia al servidor.
+
+AL COPIARLO, OJO CON EL PROPIETARIO. El servicio corre como `shorts`, no como
+root. Un token en modo 600 propiedad de root da "[Errno 13] Permission denied"
+— y verificarlo con `pct exec` (que es root) pasa sin problema, así que el
+fallo solo aparece cuando lo usa el bot de verdad:
+
+    chown -R shorts:shorts /var/lib/shorts-worker/youtube
+
+Tiene que ser suyo y ESCRIBIBLE: al refrescar el access_token se reescribe el
+fichero. El token no caduca mientras la
 pantalla de consentimiento de Google esté "En producción"; en modo "Testing"
 caduca cada 7 días.
 """
