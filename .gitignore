@@ -20,3 +20,4 @@ ig_cookies*.txt
 worker/.venv/
 worker/.env
 
+config/
