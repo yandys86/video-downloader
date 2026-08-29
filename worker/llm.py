@@ -1,11 +1,14 @@
 """Wrapper para Claude API: detección de highlights + reescritura de guiones."""
 
 import json
+import logging
 import re
 
 from anthropic import Anthropic
 
 from .settings import settings
+
+log = logging.getLogger("llm")
 
 
 _client: Anthropic | None = None
@@ -109,6 +112,63 @@ def rewrite_as_short_script(excerpt: str) -> str:
     )
     text = "".join(block.text for block in msg.content if block.type == "text")
     return text.strip()
+
+
+def _sin_etiquetas(texto: str) -> str:
+    """Quita del copy las líneas que son solo etiquetas.
+
+    Se le pide al modelo que las devuelva aparte y aun así las mete dentro,
+    con lo que el pie acababa enseñando dos tandas de hashtags seguidas. Fiarse
+    de que el modelo obedezca sale más caro que limpiarlo aquí.
+    """
+    lineas = []
+    for l in (texto or "").strip().splitlines():
+        palabras = l.split()
+        if palabras and all(w.startswith("#") for w in palabras):
+            continue                      # línea de solo etiquetas
+        lineas.append(l)
+    return "\n".join(lineas).strip()
+
+
+def copy_para_redes(hook: str, transcripcion: str = "") -> dict:
+    """Texto listo para pegar al subir el Short a mano, más etiquetas.
+
+    Devuelve {"copy": str, "hashtags": [str]}. Si el modelo falla se compone
+    uno con el gancho: quedarse sin copy no puede impedir que se envíe el
+    vídeo, que es lo que de verdad hace falta.
+    """
+    respaldo = {"copy": (hook or "").strip(), "hashtags": ["#Shorts"]}
+    if not (hook or transcripcion):
+        return respaldo
+    try:
+        r = client().messages.create(
+            model=settings.anthropic_model,
+            max_tokens=400,
+            messages=[{"role": "user", "content": f"""Escribe el texto para publicar este clip en TikTok, Instagram y Facebook.
+
+Gancho del clip: {hook}
+Transcripción: {transcripcion[:1200]}
+
+Devuelve SOLO este JSON:
+{{"copy": "...", "hashtags": ["#uno", "#dos", "#tres", "#cuatro"]}}
+
+El "copy" son dos partes separadas por una línea en blanco:
+  1. Una frase que se entienda sin ver el vídeo y dé una razón para verlo.
+  2. Una pregunta directa al que lee, para que responda.
+
+Máximo 200 caracteres, sin contar etiquetas. En el MISMO idioma que la
+transcripción. Nada de "link en la bio" ni "dale like". Las etiquetas van
+aparte, específicas del contenido, no genéricas."""}],
+        )
+        d = _parse_json_lenient(r.content[0].text)
+        cp = _sin_etiquetas(d.get("copy") or "")
+        hs = [h if h.startswith("#") else f"#{h}"
+              for h in (d.get("hashtags") or []) if h][:6]
+        if cp:
+            return {"copy": cp, "hashtags": hs or respaldo["hashtags"]}
+    except Exception as e:
+        log.warning("copy_para_redes falló, uso el gancho: %s", e)
+    return respaldo
 
 
 def _parse_json_lenient(text: str) -> dict:

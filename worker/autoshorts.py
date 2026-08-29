@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import storage, tasks, telegram, youtube_up
+from . import llm, storage, tasks, telegram, youtube_up
 from .settings import settings
 
 log = logging.getLogger("autoshorts")
@@ -49,6 +49,25 @@ def _ejecutar(fn, db: str, job_id: str) -> dict:
     if j is None:
         raise RuntimeError(f"el job {job_id} desapareció de la base")
     return j
+
+
+def _esc(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _pie(n: int, total: int, copy: str, etiquetas: list, cuando) -> str:
+    """Pie del documento: el copy en bloque <code>, que en Telegram se copia
+    entero con un toque. Es la diferencia entre publicar desde el móvil y
+    tener que ir seleccionando texto a mano."""
+    pegable = copy + ("\n\n" + " ".join(etiquetas) if etiquetas else "")
+    cab = f"<b>Short {n}/{total}</b> · sale el {_local(cuando)}\n\n"
+    sobra = len(cab) + len(pegable) + 32 - 1024      # tope de Telegram
+    if sobra > 0:
+        # Se recorta el copy y NUNCA las etiquetas: sin ellas el Short no se
+        # encuentra, y reescribirlas a mano es justo lo que esto evita.
+        copy = copy[:max(0, len(copy) - sobra - 1)].rsplit(" ", 1)[0] + "…"
+        pegable = copy + ("\n\n" + " ".join(etiquetas) if etiquetas else "")
+    return cab + f"<code>{_esc(pegable)}</code>"
 
 
 def run_autoshorts(job_id: str) -> None:
@@ -140,6 +159,15 @@ def run_autoshorts(job_id: str) -> None:
                     tags=["shorts"], publicar_en=cuando)
                 subidos.append({"n": i, "id": vid, "cuando": cuando,
                                 "titulo": titulo})
+
+                # El MP4 al chat, con su copy listo para pegar en TikTok e
+                # Instagram. Va AQUÍ, antes de que la limpieza borre el
+                # fichero: después ya no habría nada que mandar.
+                if chat_id:
+                    c = llm.copy_para_redes(s.get("hook", ""), s.get("script", ""))
+                    telegram.send_document(
+                        chat_id, mp4,
+                        _pie(i, len(shorts), c["copy"], c["hashtags"], cuando))
             except Exception as e:
                 # Un Short que falla no puede llevarse por delante a los demás.
                 log.exception("Short %d no se pudo subir", i)
@@ -165,7 +193,9 @@ def run_autoshorts(job_id: str) -> None:
             lineas.append(f"⚠️ {len(fallidos)} no se pudieron subir:")
             lineas += [f"  #{n}: {m}" for n, m in fallidos]
         lineas.append("")
-        lineas.append("<i>Quedan privados hasta su hora; YouTube los publica solo.</i>")
+        lineas.append("<i>Quedan privados hasta su hora; YouTube los publica "
+                      "solo. Arriba tienes los MP4 con su copy: toca el bloque "
+                      "gris y se copia entero, etiquetas incluidas.</i>")
         _aviso(chat_id, "\n".join(lineas))
 
     except Exception as e:

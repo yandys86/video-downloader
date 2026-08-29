@@ -50,6 +50,34 @@ def send_message(chat_id: str, text: str) -> bool:
         return False
 
 
+def send_document(chat_id: str, file_path: Path, caption: str) -> bool:
+    """Manda el MP4 como DOCUMENTO, no como vídeo.
+
+    Como vídeo, Telegram (y iOS al guardarlo) lo recomprime. Estos ficheros se
+    van a volver a subir a TikTok o Instagram, así que interesa que lleguen los
+    bytes exactos que salieron de ffmpeg.
+    """
+    if not is_configured() or not file_path.exists():
+        return False
+    if file_path.stat().st_size > settings.telegram_max_video_bytes:
+        return send_message(chat_id, caption)
+    try:
+        with file_path.open("rb") as fh:
+            r = httpx.post(
+                _api("sendDocument"),
+                files={"document": (file_path.name, fh, "video/mp4")},
+                data={"chat_id": chat_id, "caption": caption[:1024],
+                      "parse_mode": "HTML"},
+                timeout=180.0,
+            )
+        if not r.is_success:
+            log.warning("telegram sendDocument %s: %s", r.status_code, r.text[:200])
+        return r.is_success
+    except Exception as e:
+        log.warning("telegram sendDocument error: %s", e)
+        return False
+
+
 def send_video(
     chat_id: str,
     file_path: Path,

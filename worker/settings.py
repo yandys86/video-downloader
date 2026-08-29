@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # queda muy corto. Cada uno se extiende HACIA DELANTE hasta esta duración:
     # así el gancho sigue estando en el primer segundo, que es lo que decide si
     # alguien se queda.
-    autoshorts_duracion_seg: int = 35
+    autoshorts_duracion_seg: int = 59   # tope de Shorts: 60 s
 
     # Watermark opcional en la esquina de cada Short. Vacío = sin watermark.
     # Ej: "tuvideodown.com" — se dibuja con drawtext de ffmpeg.
