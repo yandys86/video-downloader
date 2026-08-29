@@ -22,6 +22,28 @@ def _log(cb: Callable[[str, float], None] | None, stage: str, progress: float) -
 # ---------------------------------------------------------------------------
 # 1. Descarga con yt-dlp
 # ---------------------------------------------------------------------------
+# El player_client por defecto devuelve 403 al descargar de googlevideo.com.
+# Ya estaba puesto en las rutas de Next.js (app/api/info y app/api/download)
+# pero NO aquí, así que el worker seguía comiéndose el 403 y ningún job de
+# YouTube podía pasar de la descarga.
+ARGS_YOUTUBE = ["--extractor-args", "youtube:player_client=web,android"]
+
+
+def _yt_dlp(cmd: list[str]) -> None:
+    """Ejecuta yt-dlp y, si falla, SUBE EL STDERR al error.
+
+    Antes se llamaba con capture_output=True y luego se dejaba escapar el
+    CalledProcessError tal cual: el mensaje guardado era la línea de comando
+    entera y ni una palabra de por qué había fallado. El motivo real —un
+    'HTTP Error 403: Forbidden'— solo se veía reproduciéndolo a mano.
+    """
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        err = (r.stderr or r.stdout or "").strip().splitlines()
+        pista = " | ".join(l for l in err[-3:] if l.strip())
+        raise RuntimeError(f"yt-dlp falló ({r.returncode}): {pista[:400]}")
+
+
 def download_source(url: str, out_dir: Path, job_id: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(out_dir / f"{job_id}.%(ext)s")
@@ -30,10 +52,11 @@ def download_source(url: str, out_dir: Path, job_id: str) -> Path:
         "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
         "--merge-output-format", "mp4",
         "--no-playlist",
+        *ARGS_YOUTUBE,
         "-o", out_template,
         url,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    _yt_dlp(cmd)
     # Buscamos el archivo generado
     for ext in ("mp4", "mkv", "webm", "m4a"):
         p = out_dir / f"{job_id}.{ext}"
@@ -75,6 +98,7 @@ def download_section(
             "yt-dlp",
             "-f", fmt,
             "--no-playlist",
+            *ARGS_YOUTUBE,          # mismo 403 que download_source
             "--download-sections", section_spec,
             "-o", out_template,
             url,
