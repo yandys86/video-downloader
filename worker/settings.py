@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # así el gancho sigue estando en el primer segundo, que es lo que decide si
     # alguien se queda.
     autoshorts_duracion_seg: int = 59   # tope de Shorts: 60 s
+    # Idioma del título y del copy. El gancho que devuelve el análisis viene
+    # en el idioma que le apetece al modelo —un lote salió en inglés y el
+    # siguiente en español— así que se fija aquí, no se hereda.
+    autoshorts_idioma: str = "en"
 
     # Watermark opcional en la esquina de cada Short. Vacío = sin watermark.
     # Ej: "tuvideodown.com" — se dibuja con drawtext de ffmpeg.

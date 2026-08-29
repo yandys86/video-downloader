@@ -130,42 +130,60 @@ def _sin_etiquetas(texto: str) -> str:
     return "\n".join(lineas).strip()
 
 
-def copy_para_redes(hook: str, transcripcion: str = "") -> dict:
-    """Texto listo para pegar al subir el Short a mano, más etiquetas.
+IDIOMAS = {"en": "inglés", "es": "español", "pt": "portugués", "fr": "francés"}
 
-    Devuelve {"copy": str, "hashtags": [str]}. Si el modelo falla se compone
-    uno con el gancho: quedarse sin copy no puede impedir que se envíe el
-    vídeo, que es lo que de verdad hace falta.
+
+def copy_para_redes(hook: str, transcripcion: str = "",
+                    idioma: str | None = None) -> dict:
+    """Título, texto para redes y etiquetas, todo en el mismo idioma.
+
+    Devuelve {"titulo": str, "copy": str, "hashtags": [str]}. Se pide el título
+    aquí y no aparte porque es la misma llamada y así no puede pasar lo de
+    antes: copy en inglés y título en español en el mismo Short.
+
+    Si el modelo falla se cae al gancho. Quedarse sin copy no puede impedir que
+    se envíe el vídeo, que es lo que de verdad hace falta.
     """
-    respaldo = {"copy": (hook or "").strip(), "hashtags": ["#Shorts"]}
+    idioma = idioma or settings.autoshorts_idioma
+    nombre_idioma = IDIOMAS.get(idioma, idioma)
+    respaldo = {"titulo": (hook or "").strip(),
+                "copy": (hook or "").strip(), "hashtags": ["#Shorts"]}
     if not (hook or transcripcion):
         return respaldo
     try:
         r = client().messages.create(
             model=settings.anthropic_model,
             max_tokens=400,
-            messages=[{"role": "user", "content": f"""Escribe el texto para publicar este clip en TikTok, Instagram y Facebook.
+            messages=[{"role": "user", "content": f"""Prepara la publicación de este clip vertical.
 
 Gancho del clip: {hook}
 Transcripción: {transcripcion[:1200]}
 
 Devuelve SOLO este JSON:
-{{"copy": "...", "hashtags": ["#uno", "#dos", "#tres", "#cuatro"]}}
+{{"titulo": "...", "copy": "...", "hashtags": ["#uno", "#dos", "#tres", "#cuatro"]}}
 
-El "copy" son dos partes separadas por una línea en blanco:
+TODO —título, copy y etiquetas— en {nombre_idioma.upper()}, sea cual sea el
+idioma de la transcripción.
+
+"titulo": para YouTube Shorts. Máximo 80 caracteres, con gancho, sin comillas
+y sin poner "#Shorts" (se añade luego).
+
+"copy": para TikTok, Instagram y Facebook. Dos partes separadas por una línea
+en blanco:
   1. Una frase que se entienda sin ver el vídeo y dé una razón para verlo.
   2. Una pregunta directa al que lee, para que responda.
+Máximo 200 caracteres. Nada de "link in bio" ni "like and subscribe".
 
-Máximo 200 caracteres, sin contar etiquetas. En el MISMO idioma que la
-transcripción. Nada de "link en la bio" ni "dale like". Las etiquetas van
-aparte, específicas del contenido, no genéricas."""}],
+"hashtags": específicas del contenido, no genéricas. NO las repitas dentro
+del copy."""}],
         )
         d = _parse_json_lenient(r.content[0].text)
         cp = _sin_etiquetas(d.get("copy") or "")
         hs = [h if h.startswith("#") else f"#{h}"
               for h in (d.get("hashtags") or []) if h][:6]
         if cp:
-            return {"copy": cp, "hashtags": hs or respaldo["hashtags"]}
+            return {"titulo": (d.get("titulo") or hook or "").strip()[:80],
+                    "copy": cp, "hashtags": hs or respaldo["hashtags"]}
     except Exception as e:
         log.warning("copy_para_redes falló, uso el gancho: %s", e)
     return respaldo

@@ -149,14 +149,21 @@ def run_autoshorts(job_id: str) -> None:
             if not mp4.exists():
                 fallidos.append((i, "el fichero ya no está en disco"))
                 continue
-            titulo = (s.get("hook") or "").strip() or f"Short {i}"
+            # El copy se pide ANTES de subir porque de ahí sale también el
+            # título. Pidiéndolo después pasaba que el título iba en el idioma
+            # que decidiera el análisis y el copy en otro: un Short con título
+            # en español y descripción en inglés.
+            c = llm.copy_para_redes(s.get("hook", ""), s.get("script", ""))
+            titulo = (c.get("titulo") or s.get("hook") or "").strip() or f"Short {i}"
             if not titulo.endswith("#Shorts"):
                 titulo = f"{titulo[:88]} #Shorts"
+            etiquetas = c.get("hashtags") or []
             try:
                 vid = youtube_up.subir(
                     mp4, titulo,
-                    descripcion=f"{s.get('hook', '')}\n\n#Shorts",
-                    tags=["shorts"], publicar_en=cuando)
+                    descripcion=(c.get("copy") or "")
+                                + "\n\n" + " ".join(etiquetas + ["#Shorts"]),
+                    tags=etiquetas or ["shorts"], publicar_en=cuando)
                 subidos.append({"n": i, "id": vid, "cuando": cuando,
                                 "titulo": titulo})
 
@@ -164,10 +171,9 @@ def run_autoshorts(job_id: str) -> None:
                 # Instagram. Va AQUÍ, antes de que la limpieza borre el
                 # fichero: después ya no habría nada que mandar.
                 if chat_id:
-                    c = llm.copy_para_redes(s.get("hook", ""), s.get("script", ""))
                     telegram.send_document(
                         chat_id, mp4,
-                        _pie(i, len(shorts), c["copy"], c["hashtags"], cuando))
+                        _pie(i, len(shorts), c["copy"], etiquetas, cuando))
             except Exception as e:
                 # Un Short que falla no puede llevarse por delante a los demás.
                 log.exception("Short %d no se pudo subir", i)
