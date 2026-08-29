@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # Cuántos Shorts por vídeo y cada cuánto se publican.
     autoshorts_por_video: int = 2
     autoshorts_cada_horas: int = 12
+    # Los highlights que detecta el análisis duran 7-15 s, que para un Short se
+    # queda muy corto. Cada uno se extiende HACIA DELANTE hasta esta duración:
+    # así el gancho sigue estando en el primer segundo, que es lo que decide si
+    # alguien se queda.
+    autoshorts_duracion_seg: int = 35
 
     # Watermark opcional en la esquina de cada Short. Vacío = sin watermark.
     # Ej: "tuvideodown.com" — se dibuja con drawtext de ffmpeg.

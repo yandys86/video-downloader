@@ -74,11 +74,27 @@ def run_autoshorts(job_id: str) -> None:
         if ja["status"] != "done":
             raise RuntimeError(f"el análisis falló: {ja.get('error') or 'sin detalle'}")
 
-        highlights = (ja.get("result") or {}).get("highlights") or []
+        resultado_a = ja.get("result") or {}
+        highlights = resultado_a.get("highlights") or []
         if len(highlights) < cuantos:
             raise RuntimeError(
                 f"solo se encontraron {len(highlights)} momentos aprovechables "
                 f"y hacen falta {cuantos}. Prueba con un vídeo más largo.")
+
+        # Los highlights vienen cortos (7-15 s). Se extienden hasta `dura` sin
+        # salirse del vídeo: si no cabe hacia delante, se retrocede el inicio.
+        dura = float(entrada.get("duracion") or settings.autoshorts_duracion_seg)
+        total = float(resultado_a.get("duration") or 0)
+        rangos = []
+        for h in highlights[:cuantos]:
+            ini = float(h["start"])
+            fin = ini + dura
+            if total and fin > total:
+                fin = total
+                ini = max(0.0, total - dura)
+            rangos.append({"start": round(ini, 2), "end": round(fin, 2),
+                           "hook": h.get("hook", "")})
+        log.info("rangos: %s", [f"{r['start']:.0f}-{r['end']:.0f}s" for r in rangos])
 
         # ── 2. Renderizar ─────────────────────────────────────────────
         storage.update_job(db, job_id, stage="renderizando", progress=0.35)
@@ -88,7 +104,9 @@ def run_autoshorts(job_id: str) -> None:
         hijo_g = storage.new_job(
             db, "generate",
             {"parent_id": hijo_a,
-             "highlight_indices": list(range(cuantos)),   # el LLM los da ordenados
+             # rangos explícitos, no `highlight_indices`: así se controla la
+             # duración exacta sin tocar el análisis, que comparte con la web.
+             "custom_ranges": rangos,
              "style": entrada.get("style", "blur"),
              "voice_mode": entrada.get("voice_mode", "original"),
              "captions": True,
